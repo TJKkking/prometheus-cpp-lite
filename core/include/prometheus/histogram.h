@@ -29,6 +29,9 @@ namespace prometheus {
   /// a data race.
   template <typename Value_ = uint64_t>
   class Histogram : public Metric {
+      const BucketBoundaries       bucket_boundaries_;
+      std::vector<Counter<Value_>> bucket_counts_;
+      Gauge<Value_>                sum_;
 
     public:
       using Value  = Value_;
@@ -115,10 +118,6 @@ namespace prometheus {
         return metric;
       }
 
-     private:
-      const BucketBoundaries       bucket_boundaries_;
-      std::vector<Counter<Value_>> bucket_counts_;
-      Gauge<Value_>                sum_;
   };
 
   /// \brief Return a builder to configure and register a Histogram metric.

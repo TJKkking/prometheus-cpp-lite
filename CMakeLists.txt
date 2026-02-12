@@ -2,7 +2,7 @@ project(prometheus-cpp-lite)
 
 include(GNUInstallDirs)
 
-cmake_minimum_required(VERSION 3.2)
+cmake_minimum_required(VERSION 3.12)
 
 option(PROMETHEUS_BUILD_EXAMPLES "Build with examples" OFF)
 

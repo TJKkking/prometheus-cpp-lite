@@ -277,7 +277,7 @@ namespace jdl {
     inline static HTTPResponse request(HTTPMethod method, const URI& uri, const std::string& body = "") {
 
       socktype_t fd = connectToURI(uri);
-      if (fd < 0)
+      if (fd == SO_ERROR || fd == INVALID_SOCKET)
         return HTTPResponse::fail();
 
   //    string request = string(method2string(method)) + string(" /") +

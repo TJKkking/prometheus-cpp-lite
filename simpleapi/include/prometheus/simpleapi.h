@@ -9,6 +9,7 @@
 
 #include <prometheus/registry.h>
 #include <prometheus/save_to_file.h>
+#include <prometheus/push_to_server.h>
 
 #include <thread>
 #include <iostream>
@@ -18,8 +19,9 @@
 namespace prometheus {
   namespace simpleapi {
 
-    extern Registry&  registry;
-    extern SaveToFile saver;
+    extern Registry&    registry;
+    extern SaveToFile   saver;
+    extern PushToServer pusher;
 
 
     template <typename CustomWrapper>
@@ -47,6 +49,7 @@ namespace prometheus {
 
       using Metric = Counter<uint64_t>;
       using Family = Metric::Family;
+      using Labels = Family::Labels;
 
     private:
 
@@ -59,12 +62,14 @@ namespace prometheus {
 
     public:
 
+      // add tags for simple metric 
+      static Labels label;
       // fake empty metric
       counter_metric_t() = default;
 
-      // make new counter as simple metric without tags and with hidden family included: metric_t metric {"counter_name", "Counter description"}
+      // make new counter as simple metric with hidden family included: metric_t metric {"counter_name", "Counter description"}
       counter_metric_t(const std::string& name, const std::string& description)
-        : family_(&Metric::Family::Build(registry, name, description)), metric_(&family_->Add({})) {}
+        : family_ (&Metric::Family::Build (registry, name, description, label)), metric_ (&family_->Add ({})) {}
 
       void operator++ ()                           { metric_->Increment();    }
       void operator++ (int)                        { metric_->Increment();    }
