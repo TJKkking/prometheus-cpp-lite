@@ -2,7 +2,7 @@
 
 [![Build examples](https://github.com/biaks/prometheus-cpp-lite/actions/workflows/cmake.yml/badge.svg)](https://github.com/biaks/prometheus-cpp-lite/actions/workflows/cmake.yml)
 
-**Header-only C++ library for Prometheus metrics - simple, fast, dependency-free.**
+**Crossplatform header-only C++ library for quickly adding metrics (and profiling) functionality to C++ projects - simple, fast, dependency-free.**
 
 ```cpp
 #include <prometheus/prometheus.h>
