@@ -1,31 +1,29 @@
 
-add_executable       (original_example               "original_example.cpp" )
-target_link_libraries(original_example               prometheus-cpp-lite-core)
+function(add_example NAME_EXAMPLE REQUIRED_TARGETS)
+  string(CONCAT SUBPROJECT_NAME "prometheus_" ${NAME_EXAMPLE})
+  message(STATUS "  Adding ${PROJECT_NAME}::${NAME_EXAMPLE} example..")
 
-add_executable       (modern_example                 "modern_example.cpp" )
-target_link_libraries(modern_example                 prometheus-cpp-lite-core)
+  add_executable        (${SUBPROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/${NAME_EXAMPLE}.cpp)
+  target_link_libraries (${SUBPROJECT_NAME} ${REQUIRED_TARGETS})
+  set_target_properties (${SUBPROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/examples)
+endfunction()
 
-add_executable       (use_counters_in_class_example  "use_counters_in_class_example.cpp" )
-target_link_libraries(use_counters_in_class_example  prometheus-cpp-lite-core)
+# Core examples (no networking required)
+add_example(test_counter                      prometheus-cpp-lite)
+add_example(test_gauge                        prometheus-cpp-lite)
+add_example(test_histogram                    prometheus-cpp-lite)
+add_example(test_summary                      prometheus-cpp-lite)
+add_example(test_benchmark                    prometheus-cpp-lite)
+add_example(provide_via_textfile              prometheus-cpp-lite)
 
-add_executable       (use_gauge_in_class_example     "use_gauge_in_class_example.cpp" )
-target_link_libraries(use_gauge_in_class_example     prometheus-cpp-lite-core)
+# Networking examples (require ip-sockets)
+if(PROMETHEUS_USE_IP_SOCKETS)
+  add_example(quick_start                     prometheus-cpp-lite)
+  add_example(provide_via_http_pull_simple    prometheus-cpp-lite)
+  add_example(provide_via_http_pull_advanced  prometheus-cpp-lite)
+  add_example(provide_via_http_push_simple    prometheus-cpp-lite)
+  add_example(provide_via_http_push_advanced  prometheus-cpp-lite)
+  add_example(legacy_prometheus_cpp           prometheus-cpp-lite)
+  add_example(check_global_objects            prometheus-cpp-lite-full)
+endif()
 
-add_executable       (use_benchmark_in_class_example "use_benchmark_in_class_example.cpp" )
-target_link_libraries(use_benchmark_in_class_example prometheus-cpp-lite-core)
-
-add_executable       (save_to_file_example           "save_to_file_example.cpp" )
-target_link_libraries(save_to_file_example           prometheus-cpp-lite-core)
-
-add_executable       (push_to_server_example         "push_to_server_example.cpp" )
-target_link_libraries(push_to_server_example         prometheus-cpp-lite-core)
-
-add_executable       (gateway_example                "gateway_example.cpp" )
-target_link_libraries(gateway_example                prometheus-cpp-lite-core)
-
-
-add_executable       (simpleapi_example              "simpleapi_example.cpp")
-target_link_libraries(simpleapi_example              prometheus-cpp-simpleapi)
-
-add_executable       (simpleapi_use_in_class_example "simpleapi_use_in_class_example.cpp")
-target_link_libraries(simpleapi_use_in_class_example prometheus-cpp-simpleapi)
