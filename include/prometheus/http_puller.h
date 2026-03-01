@@ -55,6 +55,11 @@ namespace prometheus {
     using tcp_server_t = tcp_socket_t<v4, socket_type_e::server>;
     using tcp_client_t = tcp_socket_t<v4, socket_type_e::client>;
     using endpoints_t  = std::unordered_map<std::string, std::shared_ptr<registry_t>>;
+    #ifndef NDEBUG
+    log_e socket_log = log_e::debug;
+    #else
+    log_e socket_log = log_e::error;
+    #endif
 
     endpoints_t        endpoints;        /// @brief Map from URL path to a shared registry.
     mutable std::mutex endpoints_mutex;  ///< Protects the endpoints map.
@@ -63,7 +68,7 @@ namespace prometheus {
     std::atomic<bool>  must_die       { false };
 
     addr4_t            server_address { "0.0.0.0", 9100 };
-    tcp_server_t       server_socket  { log_e::debug };
+    tcp_server_t       server_socket  { socket_log };
 
   public:
 
@@ -192,12 +197,12 @@ namespace prometheus {
 
     /// @brief Starts the HTTP server worker thread.
     void start() {
+      // Validate listen address.
+      if (server_address.port == 0)
+        throw std::runtime_error("http_server_t::start(): server port is 0 — call set_server_address() with a valid port before start()");
       // Stop the previous thread if it is still running
-      if (worker_thread.joinable()) {
-        must_die = true;
-        worker_thread.join();
-      }
-      must_die = false;
+      stop();
+      must_die      = false;
       worker_thread = std::thread{ &http_server_t::worker_function, this };
     }
 

@@ -99,8 +99,7 @@ void test_main_1() {
 void test_main_2() {
   std::cout << "\n=== test_main_2 - Shortest path with custom quantile definitions ===\n";
 
-  summary_metric_t metric2 ("response_time_seconds", "API response time", {},  // no extra labels
-                            SummaryQuantiles{{0.5, 0.05}, {0.75, 0.02}, {0.9, 0.01}, {0.99, 0.001}});
+  summary_metric_t metric2 ("response_time_seconds", "API response time", {}, {{0.5, 0.05}, {0.75, 0.02}, {0.9, 0.01}, {0.99, 0.001}});
 
   feed_latency_observations(metric2);
 
@@ -121,11 +120,9 @@ void test_main_2() {
 void test_main_3() {
   std::cout << "\n=== test_main_3 - Explicit untyped family wrapper (global registry) ===\n";
 
-  SummaryQuantiles quantiles {{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}};
-
   family_t         durations   ("handler_duration_seconds", "handler durations");
-  summary_metric_t metric_get  (durations, {{"method",  "GET"}}, quantiles);
-  summary_metric_t metric_post (durations, {{"method", "POST"}}, quantiles);
+  summary_metric_t metric_get  (durations, {{"method",  "GET"}}, {{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}});
+  summary_metric_t metric_post (durations, {{"method", "POST"}}, {{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}});
 
   // Feed observations to GET handler.
   for (double v : {0.01, 0.02, 0.05, 0.08, 0.1, 0.15, 0.3, 0.5, 1.0, 2.0})
@@ -154,11 +151,9 @@ void test_main_3() {
 void test_main_4() {
   std::cout << "\n=== test_main_4 - Explicit typed family wrapper (global registry, compile-time safety) ===\n";
 
-  SummaryQuantiles quantiles {{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}};
-
   summary_family_t durations     ("grpc_duration_seconds", "gRPC call durations");
-  summary_metric_t metric_unary  (durations, {{"type",  "unary"}}, quantiles);
-  summary_metric_t metric_stream (durations, {{"type", "stream"}}, quantiles);
+  summary_metric_t metric_unary  (durations, {{"type",  "unary"}}, {{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}});
+  summary_metric_t metric_stream (durations, {{"type", "stream"}}, {{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}});
 
   for (double v : {0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.1, 0.2, 0.5, 1.0})
     metric_unary.Observe(v);
@@ -186,8 +181,7 @@ void test_main_5() {
   std::cout << "\n=== test_main_5 - User-owned registry with implicit family ===\n";
 
   registry_t       registry;
-  summary_metric_t metric1 (registry, "task_duration_seconds", "task processing duration", {}, // no extra labels
-                            SummaryQuantiles{{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}});
+  summary_metric_t metric1 (registry, "task_duration_seconds", "task processing duration", {}, {{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}});
 
   for (double v : {0.1, 0.2, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 3.0, 5.0})
     metric1.Observe(v);
@@ -208,12 +202,10 @@ void test_main_5() {
 void test_main_6() {
   std::cout << "\n=== test_main_6 - User-owned registry with explicit untyped family ===\n";
 
-  SummaryQuantiles quantiles {{0.5, 0.05}, {0.9, 0.01}, {0.95, 0.005}, {0.99, 0.001}};
-
   registry_t       registry;
   family_t         durations    (registry, "db_query_duration_seconds", "database query durations", {{"host", "localhost"}});
-  summary_metric_t metric_read  (durations, {{"operation",  "read"}}, quantiles);
-  summary_metric_t metric_write (durations, {{"operation", "write"}}, quantiles);
+  summary_metric_t metric_read  (durations, {{"operation",  "read"}}, {{0.5, 0.05}, {0.9, 0.01}, {0.95, 0.005}, {0.99, 0.001}});
+  summary_metric_t metric_write (durations, {{"operation", "write"}}, {{0.5, 0.05}, {0.9, 0.01}, {0.95, 0.005}, {0.99, 0.001}});
 
   for (double v : {0.001, 0.002, 0.005, 0.008, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5})
     metric_read.Observe(v);
@@ -240,12 +232,10 @@ void test_main_6() {
 void test_main_7() {
   std::cout << "\n=== test_main_7 - User-owned registry with typed family wrapper (compile-time safety) ===\n";
 
-  SummaryQuantiles quantiles {{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}};
-
   std::shared_ptr<registry_t>    registry = std::make_shared<registry_t>();
   summary_family_t durations    (registry, "cache_latency_seconds", "cache operation latency", {{"host", "localhost"}});
-  summary_metric_t metric_hit   (durations, {{"result",  "hit"}}, quantiles);
-  summary_metric_t metric_miss  (durations, {{"result", "miss"}}, quantiles);
+  summary_metric_t metric_hit   (durations, {{"result",  "hit"}}, {{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}});
+  summary_metric_t metric_miss  (durations, {{"result", "miss"}}, {{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}});
 
   for (double v : {0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005, 0.008, 0.01, 0.02, 0.05})
     metric_hit.Observe(v);

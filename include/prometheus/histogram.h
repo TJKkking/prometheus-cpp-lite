@@ -138,8 +138,7 @@ namespace prometheus {
     /// @param boundaries Sorted upper-bound values for the buckets.
     /// @throws std::invalid_argument if boundaries are not strictly increasing or contain NaN.
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
-    explicit histogram_t(const labels_t& labels,
-                         const BucketBoundaries& boundaries = DefaultBoundaries())
+    explicit histogram_t(const labels_t& labels, const BucketBoundaries& boundaries = DefaultBoundaries())
       : Metric(labels), sample_count(0), sample_sum(0) {
       // Validate that boundaries are strictly increasing.
       for (size_t i = 1; i < boundaries.size(); ++i)

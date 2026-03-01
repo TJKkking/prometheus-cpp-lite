@@ -45,6 +45,11 @@ namespace prometheus {
   class http_pusher_t {
 
     using tcp_client_t = tcp_socket_t<v4, socket_type_e::client>;
+    #ifndef NDEBUG
+    log_e socket_log = log_e::debug;
+    #else
+    log_e socket_log = log_e::error;
+    #endif
 
     std::shared_ptr<registry_t> registry_ptr  { nullptr };
     std::thread                 worker_thread;
@@ -106,22 +111,44 @@ namespace prometheus {
 
     /// @brief Gateway-compatible constructor: builds the URI from host, port, job name, and labels.
     ///
-    /// Does NOT start a background thread.  Use Push(), PushAdd(), or Delete()
+    /// Does NOT start a background thread. Use Push(), PushAdd(), or Delete()
     /// for on-demand operation, or call start() for periodic pushing.
     ///
-    /// @param host    Pushgateway hostname or IP (without scheme).
-    /// @param port    Pushgateway port as a string.
-    /// @param jobname Job name for the Pushgateway grouping key.
-    /// @param labels  Additional grouping labels (e.g. {{"instance", "host1"}}).
+    /// @param host      Pushgateway hostname or IP (without scheme).
+    /// @param port      Pushgateway port as a string.
+    /// @param jobname   Job name for the Pushgateway grouping key.
+    /// @param labels    Additional grouping labels (e.g. {{"instance", "host1"}}).
     http_pusher_t(const std::string& host, const std::string& port, const std::string& jobname, const Labels& labels = {})
       : server_host(host), server_port(static_cast<uint16_t>(std::stoi(port))) {
       // Build path: /metrics/job/<jobname>[/label1/value1/...]
       std::ostringstream path_stream;
       path_stream << "/metrics/job/" << jobname;
-      for (const auto& label : labels)
+      for (const Labels::value_type& label : labels)
         path_stream << "/" << label.first << "/" << label.second;
       server_path = path_stream.str();
       server_ip   = ip4_t(server_host);
+    }
+
+    /// @brief Gateway-compatible constructor: builds the URI from host, port, job name, and labels.
+    ///
+    /// Start a background thread.
+    ///
+    /// @param registry_ Registry to push.
+    /// @param period_   Interval between pushes.
+    /// @param host      Pushgateway hostname or IP (without scheme).
+    /// @param port      Pushgateway port as a string.
+    /// @param jobname   Job name for the Pushgateway grouping key.
+    /// @param labels    Additional grouping labels (e.g. {{"instance", "host1"}}).
+    http_pusher_t(registry_t& registry_, const std::chrono::seconds& period_, const std::string& host, const std::string& port, const std::string& jobname, const Labels& labels = {})
+      : registry_ptr(make_non_owning(registry_)), period(period_), server_host(host), server_port(static_cast<uint16_t>(std::stoi(port))) {
+      // Build path: /metrics/job/<jobname>[/label1/value1/...]
+      std::ostringstream path_stream;
+      path_stream << "/metrics/job/" << jobname;
+      for (const Labels::value_type& label : labels)
+        path_stream << "/" << label.first << "/" << label.second;
+      server_path = path_stream.str();
+      server_ip   = ip4_t(server_host);
+      start();
     }
 
     /// @brief Stops the pusher and joins the worker thread.
@@ -192,12 +219,16 @@ namespace prometheus {
     /// @brief Pushes metrics via HTTP POST (replaces all metrics for this job on the Pushgateway).
     /// @return HTTP status code, or -1 on connection failure.
     int Push() {
+      if (!registry_ptr)
+        throw std::runtime_error("http_pusher_t::Push(): registry is not set — call RegisterCollectable() or set_registry() first");
       return perform_request(http_method_e::http_post);
     }
 
     /// @brief Pushes metrics via HTTP PUT (updates only the sent metrics, preserves others).
     /// @return HTTP status code, or -1 on connection failure.
     int PushAdd() {
+      if (!registry_ptr)
+        throw std::runtime_error("http_pusher_t::PushAdd(): registry is not set — call RegisterCollectable() or set_registry() first");
       return perform_request(http_method_e::http_put);
     }
 
@@ -240,7 +271,16 @@ namespace prometheus {
 
     /// @brief Starts the pusher worker thread.
     void start() {
-      must_die = false;
+      // Validate configuration before starting the thread
+      if (!registry_ptr)
+        throw std::runtime_error("http_pusher_t::start(): registry is not set — call set_registry() or pass a registry to the constructor");
+      if (server_host.empty())
+        throw std::runtime_error("http_pusher_t::start(): server host is not set — call set_uri() before start()");
+      if (server_path.empty())
+        throw std::runtime_error("http_pusher_t::start(): server path is not set — call set_uri() before start()");
+      // Stop the previous thread if it is still running
+      stop();
+      must_die      = false;
       worker_thread = std::thread{ &http_pusher_t::worker_function, this };
     }
 
@@ -291,7 +331,7 @@ namespace prometheus {
       if (!ensure_resolved())
         return -1;
 
-      tcp_client_t sock;
+      tcp_client_t sock { socket_log };
       if (sock.open(addr4_t{server_ip, server_port}) != no_error)
         return -1;
 
