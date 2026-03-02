@@ -2,7 +2,7 @@
 * prometheus-cpp-lite — header-only C++ library for exposing Prometheus metrics
 * https://github.com/biaks/prometheus-cpp-lite
 *
-* Copyright (c) 2025 Yan Kryukov ianiskr@gmail.com
+* Copyright (c) 2026 Yan Kryukov ianiskr@gmail.com
 * Licensed under the MIT License
 *
 * =============================================================================
@@ -28,8 +28,6 @@
 #include <algorithm>
 #include <limits>
 
-using namespace prometheus;
-
 // =============================================================================
 // Global registry definition
 // =============================================================================
@@ -37,6 +35,8 @@ using namespace prometheus;
 namespace prometheus {
   registry_t global_registry;
 }
+
+using namespace prometheus;
 
 // =============================================================================
 // min_max_t — custom Prometheus metric that tracks minimum and maximum values
@@ -103,12 +103,17 @@ public:
   /// @brief Constructs a reference metric, creating both family and metric in the given registry.
   template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
   min_max_t(Registry& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
-    : min_max_t(registry.Add(name, help, labels).Add<min_max_t<value_type>>({})) {}
+    : min_max_t(registry.Add(name, help).Add<min_max_t<value_type>>(labels)) {}
+
+  /// @brief Constructs a reference metric, creating both family and metric in the given registry shared ptr.
+  template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+  min_max_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
+    : min_max_t(registry->Add(name, help).Add<min_max_t<value_type>>(labels)) {}
 
   /// @brief Constructs a reference metric using the global registry.
   template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
   min_max_t(const std::string& name, const std::string& help, const labels_t& labels = {})
-    : min_max_t(global_registry.Add(name, help, labels).Add<min_max_t<value_type>>({})) {}
+    : min_max_t(global_registry.Add(name, help).Add<min_max_t<value_type>>(labels)) {}
 
   // --- Non-copyable (owning form only) ----------------------------------------
 
@@ -138,7 +143,6 @@ public:
     ++count;
   }
 
-  
   value_type GetMin()   const { return current_min.load(); } ///< @brief Returns the current minimum observed value.
   value_type GetMax()   const { return current_max.load(); } ///< @brief Returns the current maximum observed value.
   value_type GetCount() const { return count.load();       } ///< @brief Returns the total number of observations.
@@ -185,7 +189,7 @@ using BuildMinMax      = Builder<min_max_t<double>>;                 ///< @brief
 // Chain: registry → (implicit family) → metric
 // =============================================================================
 
-void test_main_1() {
+void test_main_1 () {
   std::cout << "\n=== test_main_1 — User-owned registry, implicit family ===\n";
 
   registry_t       registry;
@@ -208,13 +212,13 @@ void test_main_1() {
 // Chain: registry → family → metric
 // =============================================================================
 
-void test_main_2() {
+void test_main_2 () {
   std::cout << "\n=== test_main_2 — Explicit untyped family wrapper ===\n";
 
   registry_t       registry;
-  family_t         sensors       (registry, "sensor_reading", "Sensor min/max readings", {{"location", "lab"}});
-  min_max_metric_t humidity      (sensors, {{"type", "humidity"}});
-  min_max_metric_t pressure      (sensors, {{"type", "pressure"}});
+  family_t         sensors  (registry, "sensor_reading", "Sensor min/max readings", {{"location", "lab"}});
+  min_max_metric_t humidity (sensors,  {{"type", "humidity"}});
+  min_max_metric_t pressure (sensors,  {{"type", "pressure"}});
 
   humidity.Observe(45.0);
   humidity.Observe(62.3);
@@ -235,13 +239,13 @@ void test_main_2() {
 // Chain: registry → typed family → metric
 // =============================================================================
 
-void test_main_3() {
+void test_main_3 () {
   std::cout << "\n=== test_main_3 — Typed family wrapper (compile-time safety) ===\n";
 
   registry_t       registry;
-  min_max_family_t latency       (registry, "request_latency_ms", "Request latency range", {{"service", "api"}});
-  min_max_metric_t latency_get   (latency, {{"method", "GET"}});
-  min_max_metric_t latency_post  (latency, {{"method", "POST"}});
+  min_max_family_t latency      (registry, "request_latency_ms", "Request latency range", {{"service", "api"}});
+  min_max_metric_t latency_get  (latency,  {{"method", "GET"}});
+  min_max_metric_t latency_post (latency,  {{"method", "POST"}});
 
   // If you uncomment this, you'll get a compile-time type mismatch error:
   // counter_metric_t wrong (latency, {{"method", "DELETE"}});
@@ -254,7 +258,7 @@ void test_main_3() {
   latency_post.Observe(55.3);
   latency_post.Observe(200.7);
 
-  std::cout << " - GET  min: " << latency_get.GetMin()  << ", max: " << latency_get.GetMax()  << std::endl;
+  std::cout << " - GET  min: " <<  latency_get.GetMin() << ", max: " <<  latency_get.GetMax() << std::endl;
   std::cout << " - POST min: " << latency_post.GetMin() << ", max: " << latency_post.GetMax() << std::endl;
   std::cout << " - output serialized data:\n" << registry.serialize();
 }
@@ -265,10 +269,10 @@ void test_main_3() {
 // Chain: global_registry → (implicit family) → metric
 // =============================================================================
 
-void test_main_4() {
+void test_main_4 () {
   std::cout << "\n=== test_main_4 — Global registry (shortest form) ===\n";
 
-  global_registry = Registry();  // Clear global registry for a clean test.
+  global_registry.RemoveAll(); // Clear global registry for a clean test.
 
   min_max_metric_t cpu_freq ("cpu_frequency_mhz", "CPU frequency range");
 
@@ -289,20 +293,20 @@ void test_main_4() {
 // Chain: Registry& → BuildMinMax().Register() → CustomFamily& → min_max_t&
 // =============================================================================
 
-void test_main_5() {
+void test_main_5 () {
   std::cout << "\n=== test_main_5 — Legacy Builder API ===\n";
 
   using MinMax       = min_max_t<double>;
   using MinMaxFamily = CustomFamily<MinMax>;
 
-  Registry     registry;
+  Registry      registry;
   MinMaxFamily& response_size = BuildMinMax().Name("response_size_bytes")
                                              .Help("Response size range")
                                              .Labels({{"service", "web"}})
                                              .Register(registry);
 
-  MinMax& size_html = response_size.Add({{"content_type", "html"}});
-  MinMax& size_json = response_size.Add({{"content_type", "json"}});
+  MinMax&       size_html     = response_size.Add({{"content_type", "html"}});
+  MinMax&       size_json     = response_size.Add({{"content_type", "json"}});
 
   size_html.Observe(1024);
   size_html.Observe(512);
@@ -321,7 +325,7 @@ void test_main_5() {
 // main
 // =============================================================================
 
-int main() {
+int main () {
   std::cout << "=== Custom metric class (min_max_t) — all usage variants ===\n";
 
   try {

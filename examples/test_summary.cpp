@@ -409,7 +409,7 @@ void test_legacy_4() {
 
 void test_legacy_5() {
   std::cout << "\n=== test_legacy_5 - Legacy SimpleAPI: metric wrappers with global registry (shortest form) ===\n";
-  global_registry = Registry();  // Clear global registry for a clean test.
+  global_registry.RemoveAll();  // Clear global registry for a clean test.
 
   simpleapi::summary_metric_t metric1 { "request_latency", "request latency summary" };
 
@@ -432,7 +432,7 @@ void test_legacy_5() {
 void test_legacy_6() {
   std::cout << "\n=== test_legacy_6 - Legacy SimpleAPI: family wrapper + metric wrappers ===\n";
 
-  global_registry = Registry();  // Clear global registry for a clean test.
+  global_registry.RemoveAll();  // Clear global registry for a clean test.
 
   SummaryQuantiles quantiles {{0.5, 0.05}, {0.9, 0.01}, {0.99, 0.001}};
 

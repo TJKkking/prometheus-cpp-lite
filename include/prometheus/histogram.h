@@ -198,7 +198,7 @@ namespace prometheus {
     histogram_t(Registry& registry, const std::string& name, const std::string& help,
                 const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
       // registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
-      : histogram_t(registry.Add(name, help, labels).Add<histogram_t<value_type>>({}, boundaries)) {}
+      : histogram_t(registry.Add(name, help).Add<histogram_t<value_type>>(labels, boundaries)) {}
 
     /// @brief Constructs a reference histogram, creating both family and metric in the given registry.
     /// @param registry   Shared pointer to Registry to register the family in.
@@ -210,7 +210,7 @@ namespace prometheus {
     histogram_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help,
                 const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
       // registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
-      : histogram_t(registry->Add(name, help, labels).Add<histogram_t<value_type>>({}, boundaries)) {}
+      : histogram_t(registry->Add(name, help).Add<histogram_t<value_type>>(labels, boundaries)) {}
 
     /// @brief Constructs a reference histogram using the global registry.
     /// @param name       Metric family name.
@@ -221,7 +221,7 @@ namespace prometheus {
     histogram_t(const std::string& name, const std::string& help,
                 const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
       // global_registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
-      : histogram_t(global_registry.Add(name, help, labels).Add<histogram_t<value_type>>({}, boundaries)) {}
+      : histogram_t(global_registry.Add(name, help).Add<histogram_t<value_type>>(labels, boundaries)) {}
 
     // --- Conversion: owning → reference -----------------------------------------
 

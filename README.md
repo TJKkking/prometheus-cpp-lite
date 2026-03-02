@@ -3,21 +3,51 @@
 [![Build examples](https://github.com/biaks/prometheus-cpp-lite/actions/workflows/cmake.yml/badge.svg)](https://github.com/biaks/prometheus-cpp-lite/actions/workflows/cmake.yml)
 [![Build multi-platform](https://github.com/biaks/prometheus-cpp-lite/actions/workflows/cmake-multi-platform.yml/badge.svg)](https://github.com/biaks/prometheus-cpp-lite/actions/workflows/cmake-multi-platform.yml)
 
-**Crossplatform header-only C++ library for quickly adding metrics (and profiling) functionality to C++ projects - simple, fast, dependency-free.**
+
+**Crossplatform header-only C++ library for quickly adding metrics (and profiling) functionality to C++ projects — simple, fast, dependency-free.**
+
+**Simplest usage — global registry, no boilerplate:**
 
 ```cpp
 #include <prometheus/prometheus.h>
 
 int main() {
-  prometheus::registry_t       registry;
-  prometheus::counter_metric_t requests (registry, "http_requests_total", "Total HTTP requests");
-  prometheus::http_server_t    server   (registry, "127.0.0.1:9100");
-
-  // metrics are now available at http://localhost:9100/metrics
+  prometheus::gauge_metric_t   conn ("connections",   "Open connections");
+  prometheus::counter_metric_t get  ("http_requests", "HTTP requests", {{"method", "GET"}});
+  prometheus::counter_metric_t post ("http_requests", "HTTP requests", {{"method", "POST"}});
+  prometheus::http_server.start ("127.0.0.1:9100"); // default all metrics are exposed at /metrics
 
   for (;;) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    requests++;
+    conn  = 10 + std::rand() % 50;
+    get  += 1;
+    post += 2;
+  }
+}
+```
+
+**Full control — registry, families, labels, custom value types, multi endpoints and more (see below):**
+
+```cpp
+#include <prometheus/prometheus.h>
+using namespace prometheus;
+
+int main() {
+  registry_t          registry;
+  gauge_metric_t      conn   (registry, "connections",   "Open connections", {{"host", "web01"}});
+  family_t            reqs   (registry, "http_requests", "HTTP requests",    {{"host", "web01"}});
+  counter_t<double&>  get    (reqs,     {{"method", "GET"},  {"status", "200"}});
+  counter_t<double&>  post   (reqs,     {{"method", "POST"}, {"status", "201"}});
+  http_server_t       server (registry, "127.0.0.1:9100", "/metrics/app", log_e::info);
+
+  registry_t          registry2;
+  server.add_endpoint(registry2, "/metrics/sys");
+
+  for (;;) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    conn  = 10 + std::rand() % 50;
+    get  += 1.5;
+    post += 0.75;
   }
 }
 ```
@@ -37,7 +67,7 @@ The main C++ Prometheus library - [jupp0r/prometheus-cpp](https://github.com/jup
 | Build system        | Bazel (primary) + CMake            | CMake or **just copy files**                                      |
 | Minimum boilerplate | ~20 lines to create one counter    | **2 lines** to create a counter and expose it (with global registry, see below) |
 | Value types         | `double` only                      | `uint64_t` (default), `double`, `int64_t`, or any arithmetic type |
-| Metric types        | counter, gauge, histogram, summary | `counter`, `gauge`, `histogram`, `summary`, `info`, **`benchmark`** or you can make your own custom metric class (see `add_custom_metric_class.cpp` for a complete working example of a new user-defined metric `min_max_t`) |
+| Metric types        | `counter`, `gauge`, `histogram`, `summary`, `info` | [`counter`](examples/test_counter.cpp), [`gauge`](examples/test_gauge.cpp), [`histogram`](examples/test_histogram.cpp), [`summary`](examples/test_summary.cpp), `info`, **[`benchmark`](examples/test_benchmark.cpp)** - or [make your own](examples/add_custom_metric_class.cpp) |
 | C++ standard        | C++11                              | C++11                                                             |
 | Thread-safe         | Yes                                | Yes                                                               |
 
@@ -62,12 +92,12 @@ will work.
 - **Low entry barrier**                 - a working counter with HTTP export is 2 lines of code (with global registry, see below)
 - **Gradual complexity**                - start simple, add families/labels/registries/custom types when needed
 - **Multiple value types**              - `uint64_t` (fast integer), `double` (Prometheus-compatible), `int64_t`, or custom
-- **Six metric types**                  - `counter`, `gauge`, `histogram`, `summary`, `benchmark`, `info`
+- **Six metric types**                  - [`counter`](examples/test_counter.cpp), [`gauge`](examples/test_gauge.cpp), [`histogram`](examples/test_histogram.cpp), [`summary`](examples/test_summary.cpp), `info`, [`benchmark`](examples/test_benchmark.cpp)
 - **Three export modes**                - HTTP pull server, HTTP push (Pushgateway), file (node_exporter textfile)
 - **Simplest way with global_registry** - add metrics anywhere in your code without passing registry references
 - **prometheus-cpp compatible**         - supports the same Builder/Family/Registry API style
-- **Extensible**                        - each metric type is self-contained in one header; **you can add your own metric by following the same pattern** (see `add_custom_metric_class.cpp` example)
-- **Detailed examples**                 - see the examples folder for usage patterns
+- **Extensible**                        - each metric type is self-contained in one header; **you can [add your own](examples/add_custom_metric_class.cpp) metric by following the same pattern**
+- **Detailed examples**                 - see the [examples](examples) folder for usage patterns
 
 ---
 
@@ -123,7 +153,7 @@ int main() {
   histogram_metric_t latency  (registry, "request_duration_sec", "Request latency", {}, {0.01, 0.05, 0.1, 0.5, 1.0});
   summary_metric_t   response (registry, "response_time_sec",    "Response time",   {}, {{0.5,0.05},{0.9,0.01},{0.99,0.001}});
   benchmark_metric_t uptime   (registry, "uptime_sec",           "Process uptime");
-  info_metric_t      info     (registry, "build_info",     "Build information", {{"version", "1.0.0"}, {"commit", "abc123"}});
+  info_metric_t      info     (registry, "build_info",           "Build information", {{"version", "1.0.0"}, {"commit", "abc123"}});
 
   http_server_t      server   (registry, {{127,0,0,1}, 9100});
 
@@ -149,7 +179,7 @@ int main() {
 
 ### 1. HTTP pull (recommended for long-running services)
 
-The application runs an HTTP server. Prometheus scrapes it periodically.
+The application runs an HTTP server. Prometheus scrapes it periodically ([example](examples/provide_via_http_pull_simple.cpp)).
 
 ```cpp
 #include <prometheus/prometheus.h>
@@ -160,7 +190,7 @@ prometheus::http_server_t    server (registry, "127.0.0.1:9100");
 // → http://localhost:9100/metrics
 ```
 
-**Multiple endpoints** for different metric domains:
+**Multiple endpoints** for different metric domains ([example](examples/provide_via_http_pull_advanced.cpp)):
 
 ```cpp
 using namespace prometheus;
@@ -177,19 +207,20 @@ server.start({{127,0,0,1}, 9200});
 
 ### 2. HTTP push (for short-lived jobs, edge devices)
 
-Metrics are POSTed to a Pushgateway or VictoriaMetrics at a fixed interval.
+Metrics are POSTed to a Pushgateway or VictoriaMetrics at a fixed interval ([example](examples/provide_via_http_push_simple.cpp)).
 
 ```cpp
 #include <prometheus/prometheus.h>
 
 prometheus::registry_t       registry;
 prometheus::counter_metric_t metric (registry, "my_counter", "Example counter");
-prometheus::http_pusher_t    pusher (registry, std::chrono::seconds(5), "http://localhost:9091/metrics/job/myapp");
+prometheus::http_pusher_t    pusher (registry, std::chrono::seconds(5),
+                                               "http://localhost:9091/metrics/job/myapp");
 ```
 
 ### 3. File export (for node_exporter textfile collector)
 
-Metrics are written to a `.prom` file at a fixed interval.
+Metrics are written to a `.prom` file at a fixed interval ([example](examples/provide_via_textfile.cpp)).
 
 ```cpp
 #include <prometheus/prometheus.h>
@@ -203,18 +234,30 @@ prometheus::file_saver_t     saver  (registry, std::chrono::seconds(5), "./metri
 
 ## Labels (dimensional data)
 
+### Directly on a metric:
+
+```cpp
+registry_t       registry;
+counter_metric_t get_count  (registry, "requests", "Requests by", {{"host", "dev"}, {"method",  "GET"}});
+counter_metric_t post_count (registry, "requests", "Requests by", {{"host", "dev"}, {"method", "POST"}});
+
+get_count++;
+post_count += 5;
+```
+
 ### Using a family
 
 ```cpp
-family_t         requests   (registry, "http_requests", "HTTP requests by method", {{"host", "dev"}});
-counter_metric_t get_count  (requests, {{"method", "GET"}});
+registry_t       registry;
+family_t         requests   (registry, "requests", "Requests by", {{"host", "dev"}});
+counter_metric_t get_count  (requests, {{"method",  "GET"}});
 counter_metric_t post_count (requests, {{"method", "POST"}});
 
 get_count++;
 post_count += 5;
 ```
 
-Output:
+Output is same:
 
 ```
 # HELP http_requests HTTP requests by method
@@ -275,7 +318,8 @@ With prometheus-cpp-lite's global registry approach, none of that is
 necessary. The `prometheus-cpp-lite-full` CMake target provides ready-made
 global objects — `global_registry`, `file_saver`, `http_pusher`, and
 `http_server` — so you can create metrics anywhere in your code and start
-exposing them with a single call from any place. No plumbing required.
+exposing them with a single call from any place ([example](examples/check_global_objects.cpp)).
+No plumbing required.
 
 ### The workflow
 
@@ -319,7 +363,8 @@ prometheus::http_server.start("127.0.0.1:9100");
 ```
 
 That's it. Every metric you created in step 2 is automatically available
-at the HTTP endpoint. You can also use the other pre-defined global
+at the HTTP endpoint ([example](examples/use_metrics_in_class_simple.cpp)).
+You can also use the other pre-defined global
 exporters:
 
 ```cpp
@@ -387,7 +432,8 @@ void process_order(const Order& order) {
 
 The accumulated elapsed time is immediately available at your `/metrics`
 endpoint — no separate profiling tool, no recompilation with special flags,
-no post-hoc analysis. You get real production latency data from live traffic.
+no post-hoc analysis. You get real production latency data from live traffic
+([example](examples/use_benchmark_in_class_simple.cpp)).
 
 **Best practice for multithreaded code:** the `start()`/`stop()` state
 machine is local to each metric instance and is intentionally not
@@ -481,7 +527,7 @@ not even the `#include` lines need to be modified.
 
 ### Example 1: Exposer (HTTP pull)
 
-The code below is **valid prometheus-cpp code**. It compiles and runs with
+The code below is **[valid prometheus-cpp code](examples/legacy_prometheus_cpp.cpp)**. It compiles and runs with
 prometheus-cpp-lite without touching a single line — just swap the library
 in your build system:
 
@@ -495,8 +541,8 @@ int main() {
   auto registry = std::make_shared<prometheus::Registry>();
 
   auto& family = prometheus::BuildCounter()
-                   .Name("http_requests_total")
-                   .Help("Total HTTP requests")
+                   .Name("http_reqs")
+                   .Help("HTTP requests")
                    .Register(*registry);
 
   auto& counter = family.Add({{"method", "GET"}});
@@ -513,8 +559,8 @@ int main() {
 
 int main() {
   prometheus::registry_t       registry;
-  prometheus::http_server_t    server   (registry, "127.0.0.1:8080");
-  prometheus::counter_metric_t counter  (registry, "http_requests_total", "Total HTTP requests", {{"method", "GET"}});
+  prometheus::http_server_t    server  (registry, "127.0.0.1:8080");
+  prometheus::counter_metric_t counter (registry, "http_reqs", "HTTP requests", {{"method","GET"}});
 
   counter++;
 }
@@ -582,7 +628,7 @@ move to more explicit forms only when you need fine-grained control:
 | **Family** with explicit `registry`| Explicit registry and family with family labels     | `registry_t r;`<br>`family_t f (r, "name", "help", {{"k","v"}});`<br>`counter_metric_t m (f, {{"k","v"}});`<br>`m++;` |
 | **Custom family**                  | Compile-time type safety for families               | `counter_family_t f ("name", "help", {{"k","v"}});`<br>`counter_metric_t m (f, {{"k","v"}});`<br>`m++;` |
 | **Custom types of metric values**  | Customisation values types of metrics               | `counter_t<double&> m ("name", "help", {{"k","v"}});`<br>`m++;` |
-| **`prometheus-cpp` compatible**    | Builder pattern, raw references                     | `auto  r = std::make_shared<prometheus::Registry>();`<br>`auto& f = BuildCounter().Name("name").Help("help").Labels({{"k","v"}}).Register(r)`<br>`auto& m = f.Add({{"k","v"}});`<br>`m.Increment();` |
+| **`prometheus-cpp` compatible**    | Builder pattern, raw references                     | `auto  r = std::make_shared<prometheus::Registry>();`<br>`auto& f = BuildCounter().Name("nm").Help("hlp").Labels({{"k","v"}}).Register(r)`<br>`auto& m = f.Add({{"k","v"}});`<br>`m.Increment();` |
 
 All levels are interoperable - metrics created with any style end up in the
 same registry and are serialized together.
@@ -672,7 +718,7 @@ add_subdirectory("prometheus-cpp-lite")
 # If you need SimpleAPI and pre-defined global objects (global_registry, file_saver, etc.):
 target_link_libraries(your_target prometheus-cpp-simpleapi)
 
-# If you use only ComplexAPI or Java liked legacy API from prometheus-cpp and use local registries only:
+# If you use only ComplexAPI or Java liked legacy API from prometheus-cpp and use local registries:
 target_link_libraries(your_target prometheus-cpp-lite-core)
 ```
 
@@ -748,16 +794,45 @@ prometheus::counter_metric_t metric2 (registry, "standalone", "help", labels);
 
 
 
-## Building examples
+## Examples
 
-```cmake
+All examples are in the [`examples/`](examples/) directory. Build them with:
+
+```
 cmake -B build -G Ninja -DPROMETHEUS_BUILD_EXAMPLES=ON
 cmake --build build
 ```
 
-The examples use `prometheus-cpp-lite` (header-only target) and define
-`global_registry` in each `.cpp` file. To use the pre-defined global
-objects instead, link against `prometheus-cpp-lite-full`.
+
+| Example | Description |
+|---------|-------------|
+| **Quick start** | |
+| [`quick_start.cpp`](examples/quick_start.cpp) | All metric types + HTTP server in one file. The code from the README "All metric types at a glance" section. |
+| **Export modes** | |
+| [`provide_via_http_pull_simple.cpp`](examples/provide_via_http_pull_simple.cpp) | Shortest HTTP pull server — 3 lines of setup, `curl http://localhost:9100/metrics`. |
+| [`provide_via_http_pull_advanced.cpp`](examples/provide_via_http_pull_advanced.cpp) | Single-registry and multi-path (multiple registries at different URLs) HTTP pull examples. |
+| [`provide_via_http_push_simple.cpp`](examples/provide_via_http_push_simple.cpp) | Shortest periodic push to Pushgateway — 3 lines of setup. |
+| [`provide_via_http_push_advanced.cpp`](examples/provide_via_http_push_advanced.cpp) | Periodic push, on-demand Push/PushAdd/Delete (Gateway API), and async push examples. |
+| [`provide_via_textfile.cpp`](examples/provide_via_textfile.cpp) | Periodic save to `.prom` file for node_exporter textfile collector. |
+| **Metric types — all API levels** | |
+| [`test_counter.cpp`](examples/test_counter.cpp) | Counter (`uint64_t`) — every way to create: global/explicit registry, untyped/typed family, all legacy APIs. |
+| [`test_gauge.cpp`](examples/test_gauge.cpp) | Gauge (`int64_t`) — same full set of API variants. |
+| [`test_histogram.cpp`](examples/test_histogram.cpp) | Histogram (`double`) — buckets, custom boundaries, same full set of API variants. |
+| [`test_summary.cpp`](examples/test_summary.cpp) | Summary (`double`) — quantiles, custom quantile definitions, same full set of API variants. |
+| [`test_benchmark.cpp`](examples/test_benchmark.cpp) | Benchmark (`double`) — profile method execution time, same full set of API variants. |
+| **Global objects** | |
+| [`check_global_objects.cpp`](examples/check_global_objects.cpp) | Uses `prometheus-cpp-lite-full` cmake target with pre-defined globals: `global_registry`, `file_saver`, `http_server`, `http_pusher`. |
+| **Using metrics in classes** | |
+| [`use_metrics_in_class_simple.cpp`](examples/use_metrics_in_class_simple.cpp) | Simplest way to add metrics to a class — declare as members, increment in methods, expose via `http_server.start()`. |
+| [`use_benchmark_in_class_simple.cpp`](examples/use_benchmark_in_class_simple.cpp) | Profile method execution time with `benchmark_metric_t` — `start()`/`stop()` around code phases. |
+| [`use_metrics_in_class_advanced.cpp`](examples/use_metrics_in_class_advanced.cpp) | Dynamic per-instance metrics with labels — connection pool where each connection creates metrics at runtime via `make_metric<>()` without storing families. |
+| **Compatibility** | |
+| [`legacy_prometheus_cpp.cpp`](examples/legacy_prometheus_cpp.cpp) |  Unmodified prometheus-cpp code (`Exposer`, `BuildCounter`, `Registry`) — compiles as-is with prometheus-cpp-lite. |
+| **Extensibility** | |
+| [`add_custom_metric_class.cpp`](examples/add_custom_metric_class.cpp) | How to create your own metric type (`min_max_t` — tracks min/max of observed values). Demonstrates owning/reference forms, all family wrappers, and the Builder API. |
+
+
+
 
 ---
 

@@ -26,5 +26,8 @@ if(PROMETHEUS_USE_IP_SOCKETS)
   add_example(provide_via_http_push_advanced  prometheus-cpp-lite)
   add_example(legacy_prometheus_cpp           prometheus-cpp-lite)
   add_example(check_global_objects            prometheus-cpp-lite-full)
+  add_example(use_benchmark_in_class_simple   prometheus-cpp-lite-full)
+  add_example(use_metrics_in_class_simple     prometheus-cpp-lite-full)
+  add_example(use_metrics_in_class_advanced   prometheus-cpp-lite-full)
 endif()
 

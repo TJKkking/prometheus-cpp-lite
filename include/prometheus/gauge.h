@@ -92,7 +92,7 @@ namespace prometheus {
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     gauge_t(Registry& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
       // registry::Add() -> Family::Add<gauge_t<value_type>>() -> gauge_t<value_type>& -> gauge_t<value_type&>
-      : gauge_t(registry.Add(name, help, labels).Add<gauge_t<value_type> >({})) {}
+      : gauge_t(registry.Add(name, help).Add<gauge_t<value_type> >(labels)) {}
 
     /// @brief Constructs a reference gauge, creating both family and metric in the given registry.
     /// @param registry Shared pointer to Registry to register the family in.
@@ -102,7 +102,7 @@ namespace prometheus {
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     gauge_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
       // registry::Add() -> Family::Add<gauge_t<value_type>>() -> gauge_t<value_type>& -> gauge_t<value_type&>
-      : gauge_t(registry->Add(name, help, labels).Add<gauge_t<value_type> >({})) {}
+      : gauge_t(registry->Add(name, help).Add<gauge_t<value_type> >(labels)) {}
 
     /// @brief Constructs a reference gauge using the global registry.
     /// @param name   Metric family name.
@@ -111,7 +111,7 @@ namespace prometheus {
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     gauge_t(const std::string& name, const std::string& help, const labels_t& labels = {})
       // global_registry::Add() -> Family::Add<gauge_t<value_type>>() -> gauge_t<value_type>& -> gauge_t<value_type&>
-      : gauge_t(global_registry.Add(name, help, labels).Add<gauge_t<value_type>>({})) {}
+      : gauge_t(global_registry.Add(name, help).Add<gauge_t<value_type>>(labels)) {}
 
     // --- Conversion: owning → reference -----------------------------------------
 

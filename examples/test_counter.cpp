@@ -17,7 +17,7 @@
 * Test list
 * ---------
 * test_main_1   — Shortest path: global registry + implicit family (uint64_t).
-* test_main_2   — Shortest path with custom value type (double).
+* test_main_2   — Shortest path with custom value type (double) and labels.
 * test_main_3   — Explicit untyped family wrapper (global registry, runtime type check).
 * test_main_4   — Explicit typed family wrapper (global registry, compile-time type safety).
 * test_main_5   — User-owned registry with implicit family.
@@ -72,7 +72,7 @@ void test_main_1() {
 }
 
 // =============================================================================
-// test_main_2 - Shortest path with a custom value type (double)
+// test_main_2 - Shortest path with a custom value type (double) and labels
 //
 // Chain: global_registry → (implicit family) → metric
 //
@@ -81,18 +81,16 @@ void test_main_1() {
 // =============================================================================
 
 void test_main_2() {
-  std::cout << "\n=== test_main_2 - Shortest path with a custom value type (double) ===\n";
+  std::cout << "\n=== test_main_2 - Shortest path with a custom value type (double) and labels ===\n";
 
-  using double_metric_t = counter_t<double&>;
+  counter_t<double&> metric_load    ("duration_sec", "Duration in seconds", {{"CPU", "1"}, {"method", "load"}});
+  counter_t<double&> metric_execute ("duration_sec", "Duration in seconds", {{"CPU", "1"}, {"method", "execute"}});
 
-  double_metric_t metric3 ("metric3_name", "description of metric3");
-  double_metric_t metric4 ("metric4_name", "description of metric4");
+  metric_load++;
+  metric_execute += 0.5;
 
-  metric3++;
-  metric4 += 0.5;
-
-  std::cout << " - metric3 value: " << metric3.Get() << std::endl;
-  std::cout << " - metric4 value: " << metric4.Get() << std::endl;
+  std::cout << " - metric_load    value: " <<    metric_load.Get() << std::endl;
+  std::cout << " - metric_execute value: " << metric_execute.Get() << std::endl;
   std::cout << " - output serialized data:\n" << global_registry.serialize();
 }
 
@@ -108,7 +106,7 @@ void test_main_2() {
 void test_main_3() {
   std::cout << "\n=== test_main_3 - Explicit untyped family wrapper (global registry) ===\n";
 
-  family_t         requests    ("requests", "some description of this family");
+  family_t         requests    ("requests", "HTTP requests", {{"host", "localhost"}});
   counter_metric_t metric_get  (requests, {{"method",  "GET"}});
   counter_metric_t metric_post (requests, {{"method", "POST"}});
 
@@ -135,7 +133,8 @@ void test_main_3() {
 void test_main_4() {
   std::cout << "\n=== test_main_4 - Explicit typed family wrapper (global registry, compile-time safety) ===\n";
 
-  counter_family_t requests      ("requests", "description");
+  counter_family_t requests      ("requests", "HTTP requests");
+  //                ^-- it the same family as in test_main_3, because it has the same name and store in same global_registry
   counter_metric_t metric_put    (requests, {{"method",    "PUT"}});
   counter_metric_t metric_delete (requests, {{"method", "DELETE"}});
 
@@ -218,13 +217,13 @@ void test_main_7() {
   using family_double_t  = custom_family_t<counter_t<double>>;
 
   std::shared_ptr<registry_t>      registry = std::make_shared<registry_t>();
-  family_double_t  requests       (registry, "duration_sec", "description", {{"host", "localhost"}});
-  counter_double_t metric_load    (requests, {{"CPU", "1"}, {"method",  "load"}});
-  counter_double_t metric_execute (requests, {{"CPU", "1"}, {"method", "execute"}});
+  family_double_t  duration_sec   (registry, "duration_sec", "Duration in seconds", {{"host", "localhost"}});
+  counter_double_t metric_load    (duration_sec, {{"CPU", "1"}, {"method", "load"}});
+  counter_double_t metric_execute (duration_sec, {{"CPU", "1"}, {"method", "execute"}});
 
   // If you uncomment this, you'll get a type mismatch error right in the IDE, because the check will happen at compile time:
   // ( uint64_t type of value not allowed in a family of counter_t<double> )
-  //counter_metric_t metric_post  (requests, {{"CPU", "1"}, {"method", "POST"}});
+  //counter_metric_t metric_post  (duration_sec, {{"CPU", "1"}, {"method", "POST"}});
 
   metric_load++;
   metric_execute += 10;
@@ -367,7 +366,7 @@ void test_legacy_4() {
 
 void test_legacy_5() {
   std::cout << "\n=== test_legacy_5 - Legacy SimpleAPI: metric wrappers with global registry (shortest form) ===\n";
-  global_registry = Registry();  // Clear global registry for a clean test.
+  global_registry.RemoveAll();  // Clear global registry for a clean test.
 
   simpleapi::counter_metric_t metric1 { "metric1", "metric_description" };
   simpleapi::counter_metric_t metric2 { "metric2", "metric_description" };
@@ -391,7 +390,7 @@ void test_legacy_5() {
 void test_legacy_6() {
   std::cout << "\n=== ttest_legacy_6 - Legacy SimpleAPI: family wrapper + metric wrappers ===\n";
 
-  global_registry = Registry();  // Clear global registry for a clean test.
+  global_registry.RemoveAll();  // Clear global registry for a clean test.
 
   simpleapi::counter_family_t metric_family { "simple_family", "simple family example"  };
   simpleapi::counter_metric_t metric1       { metric_family.Add({{"name", "counter1"}}) };

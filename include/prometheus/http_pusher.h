@@ -45,21 +45,17 @@ namespace prometheus {
   class http_pusher_t {
 
     using tcp_client_t = tcp_socket_t<v4, socket_type_e::client>;
-    #ifndef NDEBUG
-    log_e socket_log = log_e::debug;
-    #else
-    log_e socket_log = log_e::error;
-    #endif
 
-    std::shared_ptr<registry_t> registry_ptr  { nullptr };
+    std::shared_ptr<registry_t> registry_ptr     { nullptr };
     std::thread                 worker_thread;
-    std::atomic<bool>           must_die      { false };
+    std::atomic<bool>           must_die         { false };
 
-    std::chrono::seconds        period        { 10 };
-    std::string                 server_host   { "localhost" };
-    ip4_t                       server_ip     { "127.0.0.1" };
-    uint16_t                    server_port   { 9091 };
-    std::string                 server_path   { "/" };
+    log_e                       socket_log_level { log_e::error };
+    std::chrono::seconds        period           { 10 };
+    std::string                 server_host      { "localhost" };
+    ip4_t                       server_ip        { "127.0.0.1" };
+    uint16_t                    server_port      { 9091 };
+    std::string                 server_path      { "/" };
 
     /// @brief HTTP method for push operations.
     enum class http_method_e : uint8_t {
@@ -78,33 +74,37 @@ namespace prometheus {
     http_pusher_t() = default;
 
     /// @brief Constructs with a shared registry.  Call start() to begin pushing.
-    /// @param registry_ Shared pointer to the registry to push.
-    explicit http_pusher_t(std::shared_ptr<registry_t> registry_)
-      : registry_ptr(std::move(registry_)) {}
+    /// @param registry_  Shared pointer to the registry to push.
+    /// @param log_level  Socket logging level (default: log_e::error).
+    explicit http_pusher_t(std::shared_ptr<registry_t> registry_, log_e log_level = log_e::error)
+      : socket_log_level(log_level), registry_ptr(std::move(registry_)) {}
 
 
     /// @brief Constructs with a shared registry.  Call start() to begin saving.
-    /// @param registry_ Registry to serialize.
-    explicit http_pusher_t(registry_t& registry_)
-      : registry_ptr(make_non_owning(registry_)) {}
+    /// @param registry_  Registry to serialize.
+    /// @param log_level  Socket logging level (default: log_e::error).
+    explicit http_pusher_t(registry_t& registry_, log_e log_level = log_e::error)
+      : socket_log_level(log_level), registry_ptr(make_non_owning(registry_)) {}
 
     /// @brief Constructs with a shared registry, push period, and target URI.  Starts immediately.
-    /// @param registry_ Shared pointer to the registry to push.
-    /// @param period_   Interval between pushes.
-    /// @param uri_      Full URI of the Pushgateway endpoint (e.g. "http://host:9091/metrics/job/myapp").
-    http_pusher_t(std::shared_ptr<registry_t> registry_, const std::chrono::seconds& period_, const std::string& uri_)
-      : registry_ptr(std::move(registry_)), period(period_) {
+    /// @param registry_  Shared pointer to the registry to push.
+    /// @param period_    Interval between pushes.
+    /// @param uri_       Full URI of the Pushgateway endpoint (e.g. "http://host:9091/metrics/job/myapp").
+    /// @param log_level  Socket logging level (default: log_e::error).
+    http_pusher_t(std::shared_ptr<registry_t> registry_, const std::chrono::seconds& period_, const std::string& uri_, log_e log_level = log_e::error)
+      : socket_log_level(log_level), registry_ptr(std::move(registry_)), period(period_) {
       set_uri(uri_);
       start();
     }
 
     /// @brief Constructs with a registry reference, push period, and target URI.  Starts immediately.
-    /// @param registry_ Registry to push.
-    /// @param period_   Interval between pushes.
-    /// @param uri_      Full URI of the Pushgateway endpoint.
+    /// @param registry_  Registry to push.
+    /// @param period_    Interval between pushes.
+    /// @param uri_       Full URI of the Pushgateway endpoint.
+    /// @param log_level  Socket logging level (default: log_e::error).
     /// @note The registry must outlive the pusher.
-    http_pusher_t(registry_t& registry_, const std::chrono::seconds& period_, const std::string& uri_)
-      : registry_ptr(make_non_owning(registry_)), period(period_) {
+    http_pusher_t(registry_t& registry_, const std::chrono::seconds& period_, const std::string& uri_, log_e log_level = log_e::error)
+      : socket_log_level(log_level), registry_ptr(make_non_owning(registry_)), period(period_) {
       set_uri(uri_);
       start();
     }
@@ -114,13 +114,13 @@ namespace prometheus {
     /// Does NOT start a background thread. Use Push(), PushAdd(), or Delete()
     /// for on-demand operation, or call start() for periodic pushing.
     ///
-    /// @param host      Pushgateway hostname or IP (without scheme).
-    /// @param port      Pushgateway port as a string.
-    /// @param jobname   Job name for the Pushgateway grouping key.
-    /// @param labels    Additional grouping labels (e.g. {{"instance", "host1"}}).
-    http_pusher_t(const std::string& host, const std::string& port, const std::string& jobname, const Labels& labels = {})
-      : server_host(host), server_port(static_cast<uint16_t>(std::stoi(port))) {
-      // Build path: /metrics/job/<jobname>[/label1/value1/...]
+    /// @param host       Pushgateway hostname or IP (without scheme).
+    /// @param port       Pushgateway port as a string.
+    /// @param jobname    Job name for the Pushgateway grouping key.
+    /// @param labels     Additional grouping labels (e.g. {{"instance", "host1"}}).
+    /// @param log_level  Socket logging level (default: log_e::error).
+    http_pusher_t(const std::string& host, const std::string& port, const std::string& jobname, const Labels& labels = {}, log_e log_level = log_e::error)
+      : socket_log_level(log_level), server_host(host), server_port(static_cast<uint16_t>(std::stoi(port))) {
       std::ostringstream path_stream;
       path_stream << "/metrics/job/" << jobname;
       for (const Labels::value_type& label : labels)
@@ -133,15 +133,15 @@ namespace prometheus {
     ///
     /// Start a background thread.
     ///
-    /// @param registry_ Registry to push.
-    /// @param period_   Interval between pushes.
-    /// @param host      Pushgateway hostname or IP (without scheme).
-    /// @param port      Pushgateway port as a string.
-    /// @param jobname   Job name for the Pushgateway grouping key.
-    /// @param labels    Additional grouping labels (e.g. {{"instance", "host1"}}).
-    http_pusher_t(registry_t& registry_, const std::chrono::seconds& period_, const std::string& host, const std::string& port, const std::string& jobname, const Labels& labels = {})
-      : registry_ptr(make_non_owning(registry_)), period(period_), server_host(host), server_port(static_cast<uint16_t>(std::stoi(port))) {
-      // Build path: /metrics/job/<jobname>[/label1/value1/...]
+    /// @param registry_  Registry to push.
+    /// @param period_    Interval between pushes.
+    /// @param host       Pushgateway hostname or IP (without scheme).
+    /// @param port       Pushgateway port as a string.
+    /// @param jobname    Job name for the Pushgateway grouping key.
+    /// @param labels     Additional grouping labels (e.g. {{"instance", "host1"}}).
+    /// @param log_level  Socket logging level (default: log_e::error).
+    http_pusher_t(registry_t& registry_, const std::chrono::seconds& period_, const std::string& host, const std::string& port, const std::string& jobname, const Labels& labels = {}, log_e log_level = log_e::error)
+      : socket_log_level(log_level), registry_ptr(make_non_owning(registry_)), period(period_), server_host(host), server_port(static_cast<uint16_t>(std::stoi(port))) {
       std::ostringstream path_stream;
       path_stream << "/metrics/job/" << jobname;
       for (const Labels::value_type& label : labels)
@@ -163,6 +163,12 @@ namespace prometheus {
     // =========================================================================
     // Configuration
     // =========================================================================
+
+    /// @brief Sets the socket logging level for subsequent connections.
+    /// @param level New logging level.
+    void set_log_level(log_e level) {
+      socket_log_level = level;
+    }
 
     /// @brief Replaces the registry to push.
     /// @param registry_ New shared pointer to a registry.
@@ -312,11 +318,15 @@ namespace prometheus {
     bool ensure_resolved() {
       if (server_ip)
         return true;
-      server_ip = tcp_client_t::resolve(server_host);
-      if (server_ip)
-        std::cout << "http_pusher_t: resolved host " << server_host << " to ip " << server_ip.to_str() << std::endl;
-      else
-        std::cout << "http_pusher_t: failed to resolve host " << server_host << std::endl;
+      server_ip = tcp_client_t::resolve(server_host, nullptr, socket_log_level);
+      if (server_ip) {
+        if (socket_log_level <= log_e::info)
+          std::cout << "http_pusher_t: resolved host " << server_host << " to ip " << server_ip.to_str() << std::endl;
+      }
+      else {
+        if (socket_log_level <= log_e::error)
+          std::cout << "http_pusher_t: failed to resolve host " << server_host << std::endl;
+      }
       return static_cast<bool>(server_ip);
     }
 
@@ -328,12 +338,20 @@ namespace prometheus {
     /// @param method HTTP method to use.
     /// @return HTTP status code (e.g. 200, 202), or -1 on connection/network failure.
     int perform_request(http_method_e method) {
-      if (!ensure_resolved())
+      if (!ensure_resolved()) {
+        if (socket_log_level <= log_e::error)
+          std::cout << "http_pusher_t: " << method_string(method) << " " << server_path
+                    << " failed (cannot resolve host)" << std::endl;
         return -1;
+      }
 
-      tcp_client_t sock { socket_log };
-      if (sock.open(addr4_t{server_ip, server_port}) != no_error)
+      tcp_client_t sock { socket_log_level };
+      if (sock.open(addr4_t{server_ip, server_port}) != no_error) {
+        if (socket_log_level <= log_e::error)
+          std::cout << "http_pusher_t: " << method_string(method) << " " << server_path
+                    << " failed (cannot connect to " << server_ip.to_str() << ":" << server_port << ")" << std::endl;
         return -1;
+      }
 
       // Serialize the body (empty for DELETE).
       std::string body;
@@ -362,10 +380,27 @@ namespace prometheus {
       int  res = sock.recv(buf, static_cast<int>(sizeof(buf) - 1));
       sock.close();
 
-      if (res <= 0)
+      if (res <= 0) {
+        if (socket_log_level <= log_e::error)
+          std::cout << "http_pusher_t: " << method_string(method) << " " << server_path
+                    << " failed (no response from server)" << std::endl;
         return -1;
+      }
 
-      return parse_http_status(buf, res);
+      int status = parse_http_status(buf, res);
+
+      if (status >= 200 && status < 300) {
+        if (socket_log_level <= log_e::info)
+          std::cout << "http_pusher_t: " << method_string(method) << " " << server_path
+                    << " " << status << " OK (" << body.size() << " bytes)" << std::endl;
+      }
+      else {
+        if (socket_log_level <= log_e::error)
+          std::cout << "http_pusher_t: " << method_string(method) << " " << server_path
+                    << " failed with HTTP " << status << std::endl;
+      }
+
+      return status;
     }
 
     /// @brief Extracts the HTTP status code from a raw response buffer.

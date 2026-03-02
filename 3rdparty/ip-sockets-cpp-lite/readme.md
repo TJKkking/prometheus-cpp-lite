@@ -1,6 +1,8 @@
 # ip-sockets-cpp-lite 🔌
 
 [![Build examples](https://github.com/biaks/ip-sockets-cpp-lite/actions/workflows/cmake.yml/badge.svg)](https://github.com/biaks/ip-sockets-cpp-lite/actions/workflows/cmake.yml)
+[![Build multi-platform](https://github.com/biaks/ip-sockets-cpp-lite/actions/workflows/cmake-multi-platform.yml/badge.svg)](https://github.com/biaks/ip-sockets-cpp-lite/actions/workflows/cmake-multi-platform.yml)
+
 
 **Simple. Lightweight. Cross-platform.**
 
@@ -107,9 +109,9 @@ Keep it simple. Keep it portable.
 
 from /include folder copy:
 
-* `ip_address.h`
-* `udp_socket.h`
-* `tcp_socket.h`
+* [`ip_address.h`](include/ip_address.h)
+* [`udp_socket.h`](include/udp_socket.h)
+* [`tcp_socket.h`](include/tcp_socket.h)
 
 **Option 2 — Use CMake**
 
@@ -255,13 +257,12 @@ if (server.open("0.0.0.0:8080") == no_error) {
 ```
 
 ### 📚 More Examples
-Check out the `examples/` directory for complete working examples:
-* `ip_address.cpp` - all IP address manipulation features
-* `udp_socket.cpp` - UDP client-server interaction
-* `tcp_socket.cpp` - TCP client-server interaction
-* `resolve_host.cpp` - resolving host to ipv4/ipv6 address example
-* `http_server.cpp` - compact multi-page HTTP server
-
+Check out the [`examples/`](examples) directory for complete working examples:
+* [`ip_address.cpp`](examples/ip_address.cpp) - all IP address manipulation features
+* [`udp_socket.cpp`](examples/udp_socket.cpp) - UDP client-server interaction
+* [`tcp_socket.cpp`](examples/tcp_socket.cpp) - TCP client-server interaction
+* [`resolve_host.cpp`](examples/resolve_host.cpp) - resolving host to ipv4/ipv6 address example
+* [`http_server.cpp`](examples/http_server.cpp) - compact multi-page HTTP server
 ---
 
 ## 🤔 Why is this convenient?

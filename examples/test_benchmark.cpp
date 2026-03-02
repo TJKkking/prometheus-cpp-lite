@@ -468,7 +468,7 @@ void test_legacy_4() {
 
 void test_legacy_5() {
   std::cout << "\n=== test_legacy_5 - Legacy SimpleAPI: metric wrappers with global registry (shortest form) ===\n";
-  global_registry = Registry();  // Clear global registry for a clean test.
+  global_registry.RemoveAll();  // Clear global registry for a clean test.
 
   simpleapi::benchmark_metric_t metric1 { "operation_duration", "operation elapsed time" };
 
@@ -492,7 +492,7 @@ void test_legacy_5() {
 void test_legacy_6() {
   std::cout << "\n=== test_legacy_6 - Legacy SimpleAPI: family wrapper + metric wrappers ===\n";
 
-  global_registry = Registry();  // Clear global registry for a clean test.
+  global_registry.RemoveAll();  // Clear global registry for a clean test.
 
   simpleapi::benchmark_family_t metric_family { "worker_elapsed", "per-worker elapsed time" };
 

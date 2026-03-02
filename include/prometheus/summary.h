@@ -258,7 +258,7 @@ namespace prometheus {
               const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(),
               size_t max_obs = 500000)
       // registry::Add() -> Family::Add<summary_t<value_type>>() -> summary_t<value_type>& -> summary_t<value_type&>
-      : summary_t(registry.Add(name, help, labels).Add<summary_t<value_type>>({}, quantiles, max_obs)) {}
+      : summary_t(registry.Add(name, help).Add<summary_t<value_type>>(labels, quantiles, max_obs)) {}
 
     /// @brief Constructs a reference summary, creating both family and metric in the given registry.
     /// @param registry  Shared pointer to Registry to register the family in.
@@ -272,7 +272,7 @@ namespace prometheus {
               const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(),
               size_t max_obs = 500000)
       // registry::Add() -> Family::Add<summary_t<value_type>>() -> summary_t<value_type>& -> summary_t<value_type&>
-      : summary_t(registry->Add(name, help, labels).Add<summary_t<value_type>>({}, quantiles, max_obs)) {}
+      : summary_t(registry->Add(name, help).Add<summary_t<value_type>>(labels, quantiles, max_obs)) {}
 
     /// @brief Constructs a reference summary using the global registry.
     /// @param name      Metric family name.
@@ -285,7 +285,7 @@ namespace prometheus {
               const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(),
               size_t max_obs = 500000)
       // global_registry::Add() -> Family::Add<summary_t<value_type>>() -> summary_t<value_type>& -> summary_t<value_type&>
-      : summary_t(global_registry.Add(name, help, labels).Add<summary_t<value_type>>({}, quantiles, max_obs)) {}
+      : summary_t(global_registry.Add(name, help).Add<summary_t<value_type>>(labels, quantiles, max_obs)) {}
 
     // --- Conversion: owning → reference -----------------------------------------
 
