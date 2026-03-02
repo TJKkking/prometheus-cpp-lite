@@ -15,6 +15,7 @@ add_example(test_histogram                    prometheus-cpp-lite)
 add_example(test_summary                      prometheus-cpp-lite)
 add_example(test_benchmark                    prometheus-cpp-lite)
 add_example(provide_via_textfile              prometheus-cpp-lite)
+add_example(add_custom_metric_class           prometheus-cpp-lite)
 
 # Networking examples (require ip-sockets)
 if(PROMETHEUS_USE_IP_SOCKETS)

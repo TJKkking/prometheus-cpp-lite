@@ -37,7 +37,7 @@ The main C++ Prometheus library - [jupp0r/prometheus-cpp](https://github.com/jup
 | Build system        | Bazel (primary) + CMake            | CMake or **just copy files**                                      |
 | Minimum boilerplate | ~20 lines to create one counter    | **2 lines** to create a counter and expose it (with global registry, see below) |
 | Value types         | `double` only                      | `uint64_t` (default), `double`, `int64_t`, or any arithmetic type |
-| Metric types        | counter, gauge, histogram, summary | counter, gauge, histogram, summary, **benchmark**, **info** or you can make your own custom metric class |
+| Metric types        | counter, gauge, histogram, summary | `counter`, `gauge`, `histogram`, `summary`, `info`, **`benchmark`** or you can make your own custom metric class (see `add_custom_metric_class.cpp` for a complete working example of a new user-defined metric `min_max_t`) |
 | C++ standard        | C++11                              | C++11                                                             |
 | Thread-safe         | Yes                                | Yes                                                               |
 
@@ -59,14 +59,14 @@ will work.
 - **Header-only**                       - no libraries to build, no linker flags, no package manager required
 - **Cross-platform**                    - works on Linux and Windows with any C++11 and higher compiler
 - **Zero dependencies**                 - pure C++ standard library (networking uses a bundled copy of [ip-sockets-cpp-lite](https://github.com/biaks/ip-sockets-cpp-lite))
-- **Low entry barrier**                 - a working counter with HTTP export is 3 lines of code (with global registry, see below)
+- **Low entry barrier**                 - a working counter with HTTP export is 2 lines of code (with global registry, see below)
 - **Gradual complexity**                - start simple, add families/labels/registries/custom types when needed
 - **Multiple value types**              - `uint64_t` (fast integer), `double` (Prometheus-compatible), `int64_t`, or custom
 - **Six metric types**                  - `counter`, `gauge`, `histogram`, `summary`, `benchmark`, `info`
 - **Three export modes**                - HTTP pull server, HTTP push (Pushgateway), file (node_exporter textfile)
 - **Simplest way with global_registry** - add metrics anywhere in your code without passing registry references
 - **prometheus-cpp compatible**         - supports the same Builder/Family/Registry API style
-- **Extensible**                        - each metric type is self-contained in one header; **you can add your own metric by following the same pattern**
+- **Extensible**                        - each metric type is self-contained in one header; **you can add your own metric by following the same pattern** (see `add_custom_metric_class.cpp` example)
 - **Detailed examples**                 - see the examples folder for usage patterns
 
 ---
@@ -613,7 +613,7 @@ toward the updated API.
 | Core headers              | Split: `registry.h`, `family.h`, `metric.h`, `builder.h`, …   | Unified: `core.h` (one header for all core types)      |
 | Metric headers            | Same                                                          | Same (`counter.h`, `gauge.h`, etc.)                    |
 | Umbrella header           | `simpleapi.h` (includes + global objects + simpleapi aliases) | `prometheus.h` (includes + global object declarations) |
-| Networking                | separate `Gateway` and `PushToServer`,<br> no HTTP pull server    | rewriten `http_pusher_t` (POST/PUT/DELETE,<br>sync + async, periodic + on-demand, `Gateway`-compatible)<br>+ new `http_server_t` (HTTP pull, multi-endpoint, index page, `Exposer`-compatible) |
+| Networking                | separate `Gateway` and `PushToServer`,<br> no HTTP pull server    | rewritten `http_pusher_t` (POST/PUT/DELETE,<br>sync + async, periodic + on-demand, `Gateway`-compatible)<br>+ new `http_server_t` (HTTP pull, multi-endpoint, index page, `Exposer`-compatible) |
 | Networking library        | `http-client-lite` (bundled)                                  | `ip-sockets-cpp-lite` (bundled)                        |
 | Networking headers        | `save_to_file.h`, `push_to_server.h`, `gateway.h`             | `file_saver.h`, `http_pusher.h`, `http_puller.h`       |
 | Collect values            | standalone classes for storing and serializing metric values  | each metric collects and serializes values itself      |
@@ -767,7 +767,7 @@ HTTP pull and push functionality uses
 [ip-sockets-cpp-lite](https://github.com/biaks/ip-sockets-cpp-lite) - a
 header-only, dependency-free, cross-platform C++ sockets library by the same
 author. A copy of its headers is bundled in
-[`3rdparty/ip-sockets-lite/`](3rdparty/ip-sockets-lite/) so that
+[`3rdparty/ip-sockets-cpp-lite/`](3rdparty/ip-sockets-cpp-lite/) so that
 prometheus-cpp-lite remains self-contained with zero external dependencies.
 
 If you only need the core metrics and serialization (e.g. you have your own
