@@ -51,14 +51,14 @@ namespace prometheus {
       : info_t(family.Add(labels)) {}
 
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    info_t(Registry& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
+    info_t(Registry& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
       : info_t(registry.Add(name, help).Add<info_t<value_type>>(labels)) {}
 
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    info_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
+    info_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
       : info_t(registry->Add(name, help).Add<info_t<value_type>>(labels)) {}
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    info_t(const std::string& name, const std::string& help, const labels_t& labels = {})
+    info_t(const std::string& name, const std::string& help = {}, const labels_t& labels = {})
       : info_t(global_registry.Add(name, help).Add<info_t<value_type>>(labels)) {}
 
     // Non-copyable (owning form)

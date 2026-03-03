@@ -254,7 +254,7 @@ namespace prometheus {
     /// @param quantiles Quantile/error pairs to compute.
     /// @param max_obs   Maximum observations to keep in the buffer (sliding window).
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    summary_t(Registry& registry, const std::string& name, const std::string& help,
+    summary_t(Registry& registry, const std::string& name, const std::string& help = {},
               const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(),
               size_t max_obs = 500000)
       // registry::Add() -> Family::Add<summary_t<value_type>>() -> summary_t<value_type>& -> summary_t<value_type&>
@@ -268,7 +268,7 @@ namespace prometheus {
     /// @param quantiles Quantile/error pairs to compute.
     /// @param max_obs   Maximum observations to keep in the buffer (sliding window).
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    summary_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help,
+    summary_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {},
               const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(),
               size_t max_obs = 500000)
       // registry::Add() -> Family::Add<summary_t<value_type>>() -> summary_t<value_type>& -> summary_t<value_type&>
@@ -281,7 +281,7 @@ namespace prometheus {
     /// @param quantiles Quantile/error pairs to compute.
     /// @param max_obs   Maximum observations to keep in the buffer (sliding window).
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    summary_t(const std::string& name, const std::string& help,
+    summary_t(const std::string& name, const std::string& help = {},
               const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(),
               size_t max_obs = 500000)
       // global_registry::Add() -> Family::Add<summary_t<value_type>>() -> summary_t<value_type>& -> summary_t<value_type&>
@@ -374,8 +374,7 @@ namespace prometheus {
     /// @param out         Output stream.
     /// @param family_name Metric family name (line prefix).
     /// @param base_labels Constant labels from the owning family.
-    void serialize(std::ostream& out, const std::string& family_name,
-                   const labels_t& base_labels) const override {
+    void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const override {
       // Write one line per quantile with the "quantile" extra label.
       for (size_t i = 0; i < snapshot_quantiles.size(); ++i) {
         const QuantileSnapshot& q = snapshot_quantiles[i];
@@ -388,15 +387,12 @@ namespace prometheus {
           quantile_str.assign(buf.data(), static_cast<size_t>(n));
         }
 
-        TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(),
-                                  q.value, "", "quantile", quantile_str);
+        TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), q.value, "", "quantile", quantile_str);
       }
 
       // Write the total count and sum lines.
-      TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(),
-                                snapshot_count, "_count");
-      TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(),
-                                snapshot_sum, "_sum");
+      TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), snapshot_count, "_count");
+      TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), snapshot_sum, "_sum");
     }
   };
 

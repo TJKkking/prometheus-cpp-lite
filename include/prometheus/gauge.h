@@ -39,7 +39,7 @@ namespace prometheus {
     using Family       = CustomFamily<gauge_t<value_type> >; ///< Legacy alias for backward compatibility.
 
   private:
-    storage_type value;
+    storage_type val;
     value_type   snapshot_value { 0 };
 
     /// Grant access to internals so the reference form can bind to the owning form.
@@ -54,7 +54,7 @@ namespace prometheus {
     /// @param labels Per-metric dimensional labels (copied and owned).
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
     explicit gauge_t(const labels_t& labels)
-      : Metric(labels), value(0) {}
+      : Metric(labels), val(0) {}
 
     // --- SimpleAPI: easy to use from the user's side, non-trivial internally.
     // --- Reference constructors (gauge_t<value_type&>) --------------------------
@@ -64,7 +64,7 @@ namespace prometheus {
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     gauge_t(gauge_t<value_type>& other)
       // gauge_t<value_type>& -> gauge_t<value_type&>
-      : Metric(other.labels_ptr), value(other.value), snapshot_value(other.snapshot_value) {}
+      : Metric(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
 
     /// @brief Constructs a reference gauge by adding an owning gauge to the given family.
     /// The metric value type compatibility with the family is checked at runtime.
@@ -90,7 +90,7 @@ namespace prometheus {
     /// @param help     Help/description string.
     /// @param labels   Constant base labels for the family.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    gauge_t(Registry& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
+    gauge_t(Registry& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
       // registry::Add() -> Family::Add<gauge_t<value_type>>() -> gauge_t<value_type>& -> gauge_t<value_type&>
       : gauge_t(registry.Add(name, help).Add<gauge_t<value_type> >(labels)) {}
 
@@ -100,7 +100,7 @@ namespace prometheus {
     /// @param help     Help/description string.
     /// @param labels   Constant base labels for the family.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    gauge_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
+    gauge_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
       // registry::Add() -> Family::Add<gauge_t<value_type>>() -> gauge_t<value_type>& -> gauge_t<value_type&>
       : gauge_t(registry->Add(name, help).Add<gauge_t<value_type> >(labels)) {}
 
@@ -109,7 +109,7 @@ namespace prometheus {
     /// @param help   Help/description string.
     /// @param labels Constant base labels for the family.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    gauge_t(const std::string& name, const std::string& help, const labels_t& labels = {})
+    gauge_t(const std::string& name, const std::string& help = {}, const labels_t& labels = {})
       // global_registry::Add() -> Family::Add<gauge_t<value_type>>() -> gauge_t<value_type>& -> gauge_t<value_type&>
       : gauge_t(global_registry.Add(name, help).Add<gauge_t<value_type>>(labels)) {}
 
@@ -135,59 +135,63 @@ namespace prometheus {
     // --- Public API (shared by both owning and reference forms) -----------------
 
     /// @brief Increments the gauge by one.
-    void Increment() { ++value; }
+    void Increment() { ++val; }
 
     /// @brief Increments the gauge by the given value.
-    /// @param val Amount to add (may be negative).
-    void Increment(const value_type& val) { value += val; }
+    /// @param value Amount to add (may be negative).
+    void Increment(const value_type& value) { val += value; }
 
     /// @brief Decrements the gauge by one.
-    void Decrement() { --value; }
+    void Decrement() { --val; }
 
     /// @brief Decrements the gauge by the given value.
-    /// @param val Amount to subtract (may be negative).
-    void Decrement(const value_type& val) { value -= val; }
+    /// @param value Amount to subtract (may be negative).
+    void Decrement(const value_type& value) { val -= value; }
 
     /// @brief Sets the gauge to the specified value.
-    /// @param val New value.
-    void Set(const value_type& val) { value.store(val); }
+    /// @param value New value.
+    void Set(const value_type& value) { val.store(value); }
 
     /// @brief Sets the gauge to the current Unix timestamp (seconds since epoch).
-    void SetToCurrentTime() { value.store(static_cast<value_type>(std::time(nullptr))); }
+    void SetToCurrentTime() { val.store(static_cast<value_type>(std::time(nullptr))); }
 
     /// @brief Returns the current gauge value.
     /// @return Atomically loaded gauge value.
-    value_type Get() const { return value.load(); }
+    value_type Get() const { return val.load(); }
+
+    /// @brief Returns the current gauge value.
+    /// @return Atomically loaded gauge value.
+    value_type value() const { return val.load(); }
 
     /// @brief Pre-increment operator (increments by one).
     /// @return Reference to this gauge.
-    gauge_t& operator++()                    { ++value;    return *this; }
+    gauge_t& operator++()                    { ++val;    return *this; }
 
     /// @brief Post-increment operator (increments by one, returns reference — not previous value).
     /// @return Reference to this gauge.
-    gauge_t& operator++(int)                 { ++value;    return *this; }
+    gauge_t& operator++(int)                 { ++val;    return *this; }
 
     /// @brief Pre-decrement operator (decrements by one).
     /// @return Reference to this gauge.
-    gauge_t& operator--()                    { --value;    return *this; }
+    gauge_t& operator--()                    { --val;    return *this; }
 
     /// @brief Post-decrement operator (decrements by one, returns reference — not previous value).
     /// @return Reference to this gauge.
-    gauge_t& operator--(int)                 { --value;    return *this; }
+    gauge_t& operator--(int)                 { --val;    return *this; }
 
     /// @brief Compound addition operator.
     /// @param v Value to add.
     /// @return Reference to this gauge.
-    gauge_t& operator+=(const value_type& v) { value += v; return *this; }
+    gauge_t& operator+=(const value_type& v) { val += v; return *this; }
 
     /// @brief Compound subtraction operator.
     /// @param v Value to subtract.
     /// @return Reference to this gauge.
-    gauge_t& operator-=(const value_type& v) { value -= v; return *this; }
+    gauge_t& operator-=(const value_type& v) { val -= v; return *this; }
 
     /// @brief Sets the gauge to the specified value.
     /// @param val New value.
-    gauge_t& operator=(const value_type& v) { value.store(v); return *this; }
+    gauge_t& operator=(const value_type& v) { val.store(v); return *this; }
 
     // --- Metric interface overrides ---------------------------------------------
 
@@ -196,14 +200,13 @@ namespace prometheus {
     const char* type_name() const override { return "gauge"; }
 
     /// @brief Freezes the current value into a snapshot for consistent serialization.
-    void collect() override { snapshot_value = value.load(); }
+    void collect() override { snapshot_value = val.load(); }
 
     /// @brief Writes this gauge's data line in the Prometheus text exposition format.
     /// @param out         Output stream.
     /// @param family_name Metric family name (line prefix).
     /// @param base_labels Constant labels from the owning family.
-    void serialize(std::ostream& out, const std::string& family_name,
-                   const labels_t& base_labels) const override {
+    void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const override {
       TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), snapshot_value);
     }
   };

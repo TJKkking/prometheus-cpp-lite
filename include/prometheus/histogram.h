@@ -195,7 +195,7 @@ namespace prometheus {
     /// @param labels     Constant base labels for the family.
     /// @param boundaries Sorted upper-bound values for the buckets.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    histogram_t(Registry& registry, const std::string& name, const std::string& help,
+    histogram_t(Registry& registry, const std::string& name, const std::string& help = {},
                 const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
       // registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
       : histogram_t(registry.Add(name, help).Add<histogram_t<value_type>>(labels, boundaries)) {}
@@ -207,7 +207,7 @@ namespace prometheus {
     /// @param labels     Constant base labels for the family.
     /// @param boundaries Sorted upper-bound values for the buckets.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    histogram_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help,
+    histogram_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {},
                 const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
       // registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
       : histogram_t(registry->Add(name, help).Add<histogram_t<value_type>>(labels, boundaries)) {}
@@ -218,7 +218,7 @@ namespace prometheus {
     /// @param labels     Constant base labels for the family.
     /// @param boundaries Sorted upper-bound values for the buckets.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    histogram_t(const std::string& name, const std::string& help,
+    histogram_t(const std::string& name, const std::string& help = {},
                 const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
       // global_registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
       : histogram_t(global_registry.Add(name, help).Add<histogram_t<value_type>>(labels, boundaries)) {}
@@ -303,8 +303,7 @@ namespace prometheus {
     /// @param out         Output stream.
     /// @param family_name Metric family name (line prefix).
     /// @param base_labels Constant labels from the owning family.
-    void serialize(std::ostream& out, const std::string& family_name,
-                   const labels_t& base_labels) const override {
+    void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const override {
       // Write one line per bucket with the "le" (less-or-equal) extra label.
       for (size_t i = 0; i < snapshot_buckets.size(); ++i) {
         const BucketSnapshot& b = snapshot_buckets[i];
@@ -317,15 +316,12 @@ namespace prometheus {
           TextSerializer::WriteValue(bound_oss, b.upper_bound);
         std::string bound_str = bound_oss.str();
 
-        TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(),
-                                  b.cumulative_count, "_bucket", "le", bound_str);
+        TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), b.cumulative_count, "_bucket", "le", bound_str);
       }
 
       // Write the total count and sum lines.
-      TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(),
-                                snapshot_count, "_count");
-      TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(),
-                                snapshot_sum, "_sum");
+      TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), snapshot_count, "_count");
+      TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), snapshot_sum, "_sum");
     }
   };
 

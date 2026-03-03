@@ -110,7 +110,7 @@ namespace prometheus {
     /// @param help     Help/description string.
     /// @param labels   Constant base labels for the family.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    benchmark_t(Registry& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
+    benchmark_t(Registry& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
       // registry::Add() -> Family::Add<benchmark_t<value_type>>() -> benchmark_t<value_type>& -> benchmark_t<value_type&>
       : benchmark_t(registry.Add(name, help, labels).Add<benchmark_t<value_type> >({})) {}
 
@@ -120,7 +120,7 @@ namespace prometheus {
     /// @param help     Help/description string.
     /// @param labels   Constant base labels for the family.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    benchmark_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
+    benchmark_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
       // registry::Add() -> Family::Add<benchmark_t<value_type>>() -> benchmark_t<value_type>& -> benchmark_t<value_type&>
       : benchmark_t(registry->Add(name, help, labels).Add<benchmark_t<value_type> >({})) {}
 
@@ -129,7 +129,7 @@ namespace prometheus {
     /// @param help   Help/description string.
     /// @param labels Constant base labels for the family.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    benchmark_t(const std::string& name, const std::string& help, const labels_t& labels = {})
+    benchmark_t(const std::string& name, const std::string& help = {}, const labels_t& labels = {})
       // global_registry::Add() -> Family::Add<benchmark_t<value_type>>() -> benchmark_t<value_type>& -> benchmark_t<value_type&>
       : benchmark_t(global_registry.Add(name, help, labels).Add<benchmark_t<value_type>>({})) {}
 
@@ -198,6 +198,10 @@ namespace prometheus {
     /// @return Atomically loaded elapsed seconds.
     value_type Get() const { return elapsed_seconds.load(); }
 
+    /// @brief Returns the total elapsed time accumulated so far (in seconds).
+    /// @return Atomically loaded elapsed seconds.
+    value_type value() const { return elapsed_seconds.load(); }
+
     // --- Metric interface overrides ---------------------------------------------
 
     /// @brief Returns the Prometheus type name for this metric.
@@ -216,8 +220,7 @@ namespace prometheus {
     /// @param out         Output stream.
     /// @param family_name Metric family name (line prefix).
     /// @param base_labels Constant labels from the owning family.
-    void serialize(std::ostream& out, const std::string& family_name,
-                   const labels_t& base_labels) const override {
+    void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const override {
       TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), snapshot_value);
     }
   };
