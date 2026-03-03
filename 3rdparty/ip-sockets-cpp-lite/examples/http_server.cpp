@@ -168,27 +168,26 @@ struct mini_http_server_t {
     headers << "Content-Length: " << body.size() << "\r\n";
     headers << "Cache-Control: public, max-age=86400\r\n";
     headers << "Connection: close\r\n";
+    headers << "Server: mini-http-server\r\n";
     // Date header
-    std::time_t now = std::time(NULL);
-    char buf[128];
-    std::strftime(buf,sizeof(buf),"%a, %d %b %Y %H:%M:%S GMT",std::gmtime(&now));
-    headers << "Date: " << buf << "\r\n";
-    // Server header and empty line to separate headers from body
-    headers << "Server: mini-http-server\r\n\r\n";
+    std::time_t now = std::time (NULL);
+    headers << "Date: " << std::put_time (gmtime (&now), "%a, %d %b %Y %H:%M:%S %Z") << "\r\n";
+    // Empty line to separate headers from body
+    headers << "\r\n";
 
     // Send headers
     std::string h = headers.str();
-    client.send (h.c_str(),(int)h.size());
-    // Send body (if any)
+    client.send (h.data(), (int)h.size());
+    // Send body (if it not empty)
     if (!body.empty())
-      client.send (body.c_str(),(int)body.size());
+      client.send (body.data(), (int)body.size());
     std::cout << "Response: " << status << " " << status_text << " (" << body.size() << " bytes)" << std::endl;
   }
 
   // ===== uptime =====
 
   std::string uptime() const {
-    std::chrono::seconds s = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start_time);
+    std::chrono::seconds s = std::chrono::duration_cast<std::chrono::seconds> (std::chrono::steady_clock::now() - start_time);
     uint64_t h = (uint64_t)s.count()/3600, m = ((uint64_t)s.count()%3600)/60, sec = (uint64_t)s.count()%60;
     std::ostringstream os;
     os << std::setw(2) << std::setfill('0') << h << ":" << std::setw(2) << m << ":" << std::setw(2) << sec;

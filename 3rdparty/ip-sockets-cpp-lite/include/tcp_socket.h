@@ -13,6 +13,10 @@
 
 namespace ipsockets {
 
+  // ============================================================
+  // tcp_socket_t — TCP socket implementation
+  // ============================================================
+
   template <ip_type_e Ip_type, socket_type_e Socket_type>
   struct tcp_socket_t : udp_socket_t<Ip_type, Socket_type> {
 
@@ -203,6 +207,152 @@ namespace ipsockets {
       return result;
 
     }
+
+  };
+
+  // ============================================================
+  // tcp_streambuf_t — std::streambuf adapter for tcp_socket_t
+  // ============================================================
+
+  template <ip_type_e Ip_type, socket_type_e Socket_type>
+  struct tcp_streambuf_t : public std::streambuf {
+
+    using tcp_t     = tcp_socket_t<Ip_type, Socket_type>;
+    using address_t = addr_t<Ip_type>;
+
+    tcp_t             sock;
+    std::vector<char> input_buffer;
+    std::vector<char> output_buffer;
+
+    int last_read_error  = no_error;
+    int last_write_error = no_error;
+
+    static const std::size_t default_bufsize = 8192;
+
+    /// @brief Constructs a streambuf from an already-opened TCP socket.
+    /// @param sock_   - TCP socket (moved into the streambuf).
+    /// @param bufsize - Size of internal read/write buffers (default: 8192).
+    tcp_streambuf_t (tcp_t&& sock_, std::size_t bufsize = default_bufsize)
+      : sock (std::move (sock_)), input_buffer (bufsize), output_buffer (bufsize) {
+      setg (input_buffer.data (), input_buffer.data (), input_buffer.data ());     // set get area to empty (will be filled on first read)
+      setp (output_buffer.data (), output_buffer.data () + output_buffer.size ()); // set put area to full buffer
+    }
+
+    tcp_streambuf_t (const tcp_streambuf_t&) = delete;
+    tcp_streambuf_t& operator= (const tcp_streambuf_t&) = delete;
+
+    tcp_streambuf_t (tcp_streambuf_t&& other)
+      : std::streambuf   (std::move (other)),
+      sock             (std::move (other.sock)),
+      input_buffer     (std::move (other.input_buffer)),
+      output_buffer    (std::move (other.output_buffer)),
+      last_read_error  (other.last_read_error),
+      last_write_error (other.last_write_error) {
+      // recalculate get area pointers relative to new buffer
+      // after move, the old pointers are invalid, reset to empty
+      setg (input_buffer.data (), input_buffer.data (), input_buffer.data ());     // set get area to empty (will be filled on first read)
+      setp (output_buffer.data (), output_buffer.data () + output_buffer.size ()); // set put area to full buffer
+    }
+
+    ~tcp_streambuf_t () {
+      flush ();
+    }
+
+    /// @brief Sends all buffered output data through the socket.
+    /// @return true on success, false on error.
+    bool flush () {
+      std::ptrdiff_t size = pptr () - pbase ();
+      if (size > 0) {
+        int n = sock.send (pbase (), (int)size);
+        if (n != (int)size) {
+          last_write_error = n;
+          return false;
+        }
+        last_write_error = no_error;
+      }
+      setp (output_buffer.data (), output_buffer.data () + output_buffer.size ()); // reset put area to full buffer
+      return true;
+    }
+
+    state_e   state ()          const { return sock.state; }          ///< @brief Returns the current socket state.
+    address_t remote_address () const { return sock.address_remote; } ///< @brief Returns the remote address of the socket.
+    address_t local_address ()  const { return sock.address_local; }  ///< @brief Returns the local address of the socket.
+
+  protected:
+
+    // called when the write buffer is full or eof is written
+    int_type overflow (int_type ch) override {
+      if (ch != traits_type::eof ()) {
+        if (pptr () == epptr () && !flush ()) // if buffer is full, flush it before writing new char
+          return traits_type::eof ();         // flush failed, return eof to indicate error
+        *pptr () = traits_type::to_char_type (ch);
+        pbump (1);
+      }     
+      else if (!flush ())                     // if ch is eof, just flush the buffer
+        return traits_type::eof ();           // flush failed, return eof to indicate error
+      return traits_type::not_eof (ch);
+    }
+
+    // called when the read buffer is exhausted
+    int_type underflow () override {
+      if (gptr () < egptr ())
+        return traits_type::to_int_type (*gptr ());
+
+      int n = sock.recv (input_buffer.data (), (int)input_buffer.size ());
+      if (n <= 0) {
+        last_read_error = n;
+        return traits_type::eof ();
+      }
+      last_read_error = no_error;
+
+      setg (input_buffer.data (), input_buffer.data (), input_buffer.data () + n); // set get area to the newly read data
+      return traits_type::to_int_type (*gptr ());
+    }
+
+    // called on std::flush / std::endl
+    int sync () override {
+      return flush () ? 0 : -1;
+    }
+
+  };
+
+  // ============================================================
+  // tcp_stream_t — std::iostream over a TCP socket
+  // ============================================================
+
+  template <ip_type_e Ip_type, socket_type_e Socket_type>
+  struct tcp_stream_t : public std::iostream {
+
+    using tcp_t       = tcp_socket_t<Ip_type, Socket_type>;
+    using address_t   = addr_t<Ip_type>;
+    using streambuf_t = tcp_streambuf_t<Ip_type, Socket_type>;
+
+    streambuf_t buf;
+
+    /// @brief Constructs a tcp_stream from an already-opened TCP socket.
+    /// @param socket  - TCP socket (moved into the stream).
+    /// @param bufsize - Size of internal read/write buffers (default: 8192).
+    /// @details After construction the stream is ready for reading and writing
+    ///   using standard iostream operators (<< and >>), std::getline, etc.
+    tcp_stream_t (tcp_t&& socket, std::size_t bufsize = streambuf_t::default_bufsize)
+      : std::iostream (&buf), buf (std::move (socket), bufsize) {}
+
+    tcp_stream_t (const tcp_stream_t&) = delete;
+    tcp_stream_t& operator= (const tcp_stream_t&) = delete;
+
+    tcp_stream_t (tcp_stream_t&& other)
+      : std::iostream (&buf), buf (std::move (other.buf)) {
+      // re-bind the iostream to the new buffer after move
+      rdbuf (&buf);
+    }
+
+    state_e      state ()            const { return buf.state (); }          ///< @brief Returns the current socket state.
+    address_t    remote_address ()   const { return buf.remote_address (); } ///< @brief Returns the remote address.
+    address_t    local_address ()    const { return buf.local_address (); }  ///< @brief Returns the local address.
+    int          last_read_error ()  const { return buf.last_read_error; }   ///< @brief Returns last read error code.
+    int          last_write_error () const { return buf.last_write_error; }  ///< @brief Returns last write error code.
+    tcp_t&       socket ()                 { return buf.sock; }              ///< @brief Returns a reference to the underlying TCP socket for advanced operations.
+    const tcp_t& socket ()           const { return buf.sock; }              ///< @brief Returns a const reference to the underlying TCP socket for advanced operations.
 
   };
 

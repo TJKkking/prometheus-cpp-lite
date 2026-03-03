@@ -1,4 +1,4 @@
-# prometheus-cpp-lite
+# [prometheus-cpp-lite](https://github.com/biaks/prometheus-cpp-lite)
 
 [![Build examples](https://github.com/biaks/prometheus-cpp-lite/actions/workflows/cmake.yml/badge.svg)](https://github.com/biaks/prometheus-cpp-lite/actions/workflows/cmake.yml)
 [![Build multi-platform](https://github.com/biaks/prometheus-cpp-lite/actions/workflows/cmake-multi-platform.yml/badge.svg)](https://github.com/biaks/prometheus-cpp-lite/actions/workflows/cmake-multi-platform.yml)

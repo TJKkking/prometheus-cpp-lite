@@ -499,8 +499,10 @@ namespace ipsockets {
           else         cerr = err; // if we don't understand type of error and it's error from OS (err<0) we just return error from OS
       }
 
-      // if error is timeout trigger, it's not an error, don't show anything
-      if (cerr == error_timeout)
+      // if error is timeout or graceful tcp close, it's not a real error, don't show anything
+      // error_timeout    — expected when SO_RCVTIMEO fires, caller should retry or check conditions
+      // error_tcp_closed — expected when remote peer closes connection gracefully (recv returns 0)
+      if (cerr == error_timeout || cerr == error_tcp_closed)
         return cerr;
 
       // show message if
