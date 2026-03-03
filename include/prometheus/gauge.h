@@ -59,6 +59,12 @@ namespace prometheus {
     // --- SimpleAPI: easy to use from the user's side, non-trivial internally.
     // --- Reference constructors (gauge_t<value_type&>) --------------------------
 
+    /// @brief Default-constructs an unbound reference counter.
+    ///        Must be reassigned via operator= before meaningful use.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    gauge_t()
+      : Metric(), val(null_atomic<value_type>()), snapshot_value(0) {}
+
     /// @brief Constructs a reference gauge that binds to an existing owning gauge.
     /// @param other Owning gauge whose atomic value and labels are referenced.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
@@ -109,9 +115,17 @@ namespace prometheus {
     /// @param help   Help/description string.
     /// @param labels Constant base labels for the family.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    gauge_t(const std::string& name, const std::string& help = {}, const labels_t& labels = {})
+    gauge_t(const std::string& name, const std::string& help, const labels_t& labels = {})
       // global_registry::Add() -> Family::Add<gauge_t<value_type>>() -> gauge_t<value_type>& -> gauge_t<value_type&>
       : gauge_t(global_registry.Add(name, help).Add<gauge_t<value_type>>(labels)) {}
+
+    /// @brief Constructs a reference gauge using the global registry.
+    /// @param name   Metric family name.
+    /// @param labels Constant base labels for the family.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    gauge_t(const std::string& name, const labels_t& labels = {})
+      // global_registry::Add() -> Family::Add<gauge_t<value_type>>() -> gauge_t<value_type>& -> gauge_t<value_type&>
+      : gauge_t(global_registry.Add(name).Add<gauge_t<value_type>>(labels)) {}
 
     // --- Conversion: owning → reference -----------------------------------------
 
@@ -131,6 +145,38 @@ namespace prometheus {
     /// @brief Owning gauges are non-copy-assignable.
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
     gauge_t& operator=(const gauge_t&) = delete;
+
+    // --- Reference form: copy/move constructible ---------------------------------
+
+    /// @brief Reference gauges are copy-constructible (rebinds to the same atomic).
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    gauge_t(const gauge_t& other)
+      : Metric(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
+
+    /// @brief Reference gauges are move-constructible.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    gauge_t(gauge_t&& other)
+      : Metric(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
+
+    /// @brief Reference gauges support copy-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    gauge_t& operator=(const gauge_t& other) {
+      if (this != &other) {
+        this->~gauge_t();
+        new (this) gauge_t(other);
+      }
+      return *this;
+    }
+
+    /// @brief Reference gauges support move-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    gauge_t& operator=(gauge_t&& other) {
+      if (this != &other) {
+        this->~gauge_t();
+        new (this) gauge_t(std::move(other));
+      }
+      return *this;
+    }
 
     // --- Public API (shared by both owning and reference forms) -----------------
 

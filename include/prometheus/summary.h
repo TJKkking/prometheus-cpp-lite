@@ -157,6 +157,12 @@ namespace prometheus {
     /// Grant access to internals so the reference form can bind to the owning form.
     friend summary_t<value_type&>;
 
+    // Returns a reference to a shared null live data instance for reference summaries without an owning counterpart.
+    static LiveData& null_live_data() {
+      static LiveData instance;
+      return instance;
+    }
+
     // --- Quantile computation helper -------------------------------------------
 
     /// @brief Computes a quantile from a sorted observation vector using linear interpolation.
@@ -212,6 +218,12 @@ namespace prometheus {
     // --- SimpleAPI: easy to use from the user's side, non-trivial internally.
     // --- Reference constructors (summary_t<value_type&>) ------------------------
 
+    /// @brief Default-constructs an unbound reference counter.
+    ///        Must be reassigned via operator= before meaningful use.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    summary_t()
+      : Metric(), live_data(null_live_data()), max_observations(0) {}
+
     /// @brief Constructs a reference summary that binds to an existing owning summary.
     /// @param other Owning summary whose live data and definitions are referenced.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
@@ -229,8 +241,7 @@ namespace prometheus {
     /// @param quantiles Quantile/error pairs to compute.
     /// @param max_obs  Maximum observations to keep in the buffer (sliding window).
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    summary_t(family_t& family, const labels_t& labels = {},
-              const Quantiles& quantiles = DefaultQuantiles(), size_t max_obs = 500000)
+    summary_t(family_t& family, const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(), size_t max_obs = 500000)
       // family_t::Add<>() -> Family::Add<>() -> summary_t<value_type>& -> summary_t<value_type&>
       : summary_t(family.Add<summary_t<value_type> >(labels, quantiles, max_obs)) {}
 
@@ -241,8 +252,7 @@ namespace prometheus {
     /// @param quantiles Quantile/error pairs to compute.
     /// @param max_obs  Maximum observations to keep in the buffer (sliding window).
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    summary_t(custom_family_t<summary_t<value_type> >& family, const labels_t& labels = {},
-              const Quantiles& quantiles = DefaultQuantiles(), size_t max_obs = 500000)
+    summary_t(custom_family_t<summary_t<value_type> >& family, const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(), size_t max_obs = 500000)
       // custom_family_t<>::Add() -> CustomFamily<>::Add() -> summary_t<value_type>& -> summary_t<value_type&>
       : summary_t(family.Add(labels, quantiles, max_obs)) {}
 
@@ -254,9 +264,7 @@ namespace prometheus {
     /// @param quantiles Quantile/error pairs to compute.
     /// @param max_obs   Maximum observations to keep in the buffer (sliding window).
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    summary_t(Registry& registry, const std::string& name, const std::string& help = {},
-              const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(),
-              size_t max_obs = 500000)
+    summary_t(Registry& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(), size_t max_obs = 500000)
       // registry::Add() -> Family::Add<summary_t<value_type>>() -> summary_t<value_type>& -> summary_t<value_type&>
       : summary_t(registry.Add(name, help).Add<summary_t<value_type>>(labels, quantiles, max_obs)) {}
 
@@ -269,8 +277,7 @@ namespace prometheus {
     /// @param max_obs   Maximum observations to keep in the buffer (sliding window).
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     summary_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {},
-              const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(),
-              size_t max_obs = 500000)
+              const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(), size_t max_obs = 500000)
       // registry::Add() -> Family::Add<summary_t<value_type>>() -> summary_t<value_type>& -> summary_t<value_type&>
       : summary_t(registry->Add(name, help).Add<summary_t<value_type>>(labels, quantiles, max_obs)) {}
 
@@ -281,11 +288,19 @@ namespace prometheus {
     /// @param quantiles Quantile/error pairs to compute.
     /// @param max_obs   Maximum observations to keep in the buffer (sliding window).
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    summary_t(const std::string& name, const std::string& help = {},
-              const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(),
-              size_t max_obs = 500000)
+    summary_t(const std::string& name, const std::string& help, const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(), size_t max_obs = 500000)
       // global_registry::Add() -> Family::Add<summary_t<value_type>>() -> summary_t<value_type>& -> summary_t<value_type&>
       : summary_t(global_registry.Add(name, help).Add<summary_t<value_type>>(labels, quantiles, max_obs)) {}
+
+    /// @brief Constructs a reference summary using the global registry.
+    /// @param name      Metric family name.
+    /// @param labels    Constant base labels for the family.
+    /// @param quantiles Quantile/error pairs to compute.
+    /// @param max_obs   Maximum observations to keep in the buffer (sliding window).
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    summary_t(const std::string& name, const labels_t& labels = {}, const Quantiles& quantiles = DefaultQuantiles(), size_t max_obs = 500000)
+      // global_registry::Add() -> Family::Add<summary_t<value_type>>() -> summary_t<value_type>& -> summary_t<value_type&>
+      : summary_t(global_registry.Add(name).Add<summary_t<value_type>>(labels, quantiles, max_obs)) {}
 
     // --- Conversion: owning → reference -----------------------------------------
 
@@ -305,6 +320,44 @@ namespace prometheus {
     /// @brief Owning summaries are non-copy-assignable.
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
     summary_t& operator=(const summary_t&) = delete;
+
+    // --- Reference form: copy/move constructible ---------------------------------
+
+    /// @brief Reference summaries are copy-constructible (rebinds to the same live data).
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    summary_t(const summary_t& other)
+      : Metric(other.labels_ptr)
+      , live_data(other.live_data)
+      , quantile_defs(other.quantile_defs)
+      , max_observations(other.max_observations) {}
+
+    /// @brief Reference summaries are move-constructible.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    summary_t(summary_t&& other)
+      : Metric(other.labels_ptr)
+      , live_data(other.live_data)
+      , quantile_defs(std::move(other.quantile_defs))
+      , max_observations(other.max_observations) {}
+
+    /// @brief Reference summaries support copy-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    summary_t& operator=(const summary_t& other) {
+      if (this != &other) {
+        this->~summary_t();
+        new (this) summary_t(other);
+      }
+      return *this;
+    }
+
+    /// @brief Reference summaries support move-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    summary_t& operator=(summary_t&& other) {
+      if (this != &other) {
+        this->~summary_t();
+        new (this) summary_t(std::move(other));
+      }
+      return *this;
+    }
 
     // --- Public API (shared by both owning and reference forms) -----------------
 

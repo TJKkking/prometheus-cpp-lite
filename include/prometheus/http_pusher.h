@@ -21,8 +21,7 @@
 
 namespace prometheus {
 
-  using namespace std::chrono_literals;
-  using namespace ipsockets;
+  using ipsockets::log_e;
 
   /// @brief HTTP client that pushes metrics to a Prometheus Pushgateway.
   ///
@@ -44,7 +43,7 @@ namespace prometheus {
   /// @endcode
   class http_pusher_t {
 
-    using tcp_client_t = tcp_socket_t<v4, socket_type_e::client>;
+    using tcp_client_t = ipsockets::tcp_socket_t<ipsockets::v4, ipsockets::socket_type_e::client>;
 
     std::shared_ptr<registry_t> registry_ptr     { nullptr };
     std::thread                 worker_thread;
@@ -53,7 +52,7 @@ namespace prometheus {
     log_e                       socket_log_level { log_e::error };
     std::chrono::seconds        period           { 10 };
     std::string                 server_host      { "localhost" };
-    ip4_t                       server_ip        { "127.0.0.1" };
+    ipsockets::ip4_t            server_ip        { "127.0.0.1" };
     uint16_t                    server_port      { 9091 };
     std::string                 server_path      { "/" };
 
@@ -126,7 +125,7 @@ namespace prometheus {
       for (const Labels::value_type& label : labels)
         path_stream << "/" << label.first << "/" << label.second;
       server_path = path_stream.str();
-      server_ip   = ip4_t(server_host);
+      server_ip   = ipsockets::ip4_t(server_host);
     }
 
     /// @brief Gateway-compatible constructor: builds the URI from host, port, job name, and labels.
@@ -147,7 +146,7 @@ namespace prometheus {
       for (const Labels::value_type& label : labels)
         path_stream << "/" << label.first << "/" << label.second;
       server_path = path_stream.str();
-      server_ip   = ip4_t(server_host);
+      server_ip   = ipsockets::ip4_t(server_host);
       start();
     }
 
@@ -166,7 +165,7 @@ namespace prometheus {
 
     /// @brief Sets the socket logging level for subsequent connections.
     /// @param level New logging level.
-    void set_log_level(log_e level) {
+    void set_log_level(ipsockets::log_e level) {
       socket_log_level = level;
     }
 
@@ -193,7 +192,7 @@ namespace prometheus {
       parse_uri(uri, server_host, server_port, server_path);
       if (server_host.empty())
         throw std::invalid_argument("Host is required in URI");
-      server_ip = ip4_t(server_host);
+      server_ip = ipsockets::ip4_t(server_host);
     }
 
     // =========================================================================
@@ -346,7 +345,7 @@ namespace prometheus {
       }
 
       tcp_client_t sock { socket_log_level };
-      if (sock.open(addr4_t{server_ip, server_port}) != no_error) {
+      if (sock.open(ipsockets::addr4_t{server_ip, server_port}) != ipsockets::no_error) {
         if (socket_log_level <= log_e::error)
           std::cout << "http_pusher_t: " << method_string(method) << " " << server_path
                     << " failed (cannot connect to " << server_ip.to_str() << ":" << server_port << ")" << std::endl;

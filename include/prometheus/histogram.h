@@ -124,6 +124,12 @@ namespace prometheus {
     /// Grant access to internals so the reference form can bind to the owning form.
     friend histogram_t<value_type&>;
 
+    // for the reference form, we need to return references to empty storage for the default constructor
+    static std::vector<Bucket>& null_buckets() {
+      static std::vector<Bucket> instance;
+      return instance;
+    }
+
   public:
     using Value = value_type;
 
@@ -157,6 +163,12 @@ namespace prometheus {
 
     // --- SimpleAPI: easy to use from the user's side, non-trivial internally.
     // --- Reference constructors (histogram_t<value_type&>) ----------------------
+
+    /// @brief Default-constructs an unbound reference counter.
+    ///        Must be reassigned via operator= before meaningful use.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    histogram_t()
+      : Metric() , buckets(null_buckets()), sample_count(null_atomic<uint64_t>()), sample_sum(null_atomic<value_type>()) {}
 
     /// @brief Constructs a reference histogram that binds to an existing owning histogram.
     /// @param other Owning histogram whose buckets, count, and sum are referenced.
@@ -195,8 +207,7 @@ namespace prometheus {
     /// @param labels     Constant base labels for the family.
     /// @param boundaries Sorted upper-bound values for the buckets.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    histogram_t(Registry& registry, const std::string& name, const std::string& help = {},
-                const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
+    histogram_t(Registry& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
       // registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
       : histogram_t(registry.Add(name, help).Add<histogram_t<value_type>>(labels, boundaries)) {}
 
@@ -207,8 +218,7 @@ namespace prometheus {
     /// @param labels     Constant base labels for the family.
     /// @param boundaries Sorted upper-bound values for the buckets.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    histogram_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {},
-                const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
+    histogram_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
       // registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
       : histogram_t(registry->Add(name, help).Add<histogram_t<value_type>>(labels, boundaries)) {}
 
@@ -218,10 +228,18 @@ namespace prometheus {
     /// @param labels     Constant base labels for the family.
     /// @param boundaries Sorted upper-bound values for the buckets.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    histogram_t(const std::string& name, const std::string& help = {},
-                const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
+    histogram_t(const std::string& name, const std::string& help, const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
       // global_registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
       : histogram_t(global_registry.Add(name, help).Add<histogram_t<value_type>>(labels, boundaries)) {}
+
+    /// @brief Constructs a reference histogram using the global registry.
+    /// @param name       Metric family name.
+    /// @param labels     Constant base labels for the family.
+    /// @param boundaries Sorted upper-bound values for the buckets.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    histogram_t(const std::string& name, const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
+      // global_registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
+      : histogram_t(global_registry.Add(name).Add<histogram_t<value_type>>(labels, boundaries)) {}
 
     // --- Conversion: owning → reference -----------------------------------------
 
@@ -241,6 +259,44 @@ namespace prometheus {
     /// @brief Owning histograms are non-copy-assignable.
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
     histogram_t& operator=(const histogram_t&) = delete;
+
+    // --- Reference form: copy/move constructible ---------------------------------
+
+    /// @brief Reference histograms are copy-constructible (rebinds to the same storage).
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    histogram_t(const histogram_t& other)
+      : Metric(other.labels_ptr)
+      , buckets(other.buckets)
+      , sample_count(other.sample_count)
+      , sample_sum(other.sample_sum) {}
+
+    /// @brief Reference histograms are move-constructible.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    histogram_t(histogram_t&& other)
+      : Metric(other.labels_ptr)
+      , buckets(other.buckets)
+      , sample_count(other.sample_count)
+      , sample_sum(other.sample_sum) {}
+
+    /// @brief Reference histograms support copy-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    histogram_t& operator=(const histogram_t& other) {
+      if (this != &other) {
+        this->~histogram_t();
+        new (this) histogram_t(other);
+      }
+      return *this;
+    }
+
+    /// @brief Reference histograms support move-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    histogram_t& operator=(histogram_t&& other) {
+      if (this != &other) {
+        this->~histogram_t();
+        new (this) histogram_t(std::move(other));
+      }
+      return *this;
+    }
 
     // --- Public API (shared by both owning and reference forms) -----------------
 

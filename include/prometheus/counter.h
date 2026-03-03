@@ -57,6 +57,12 @@ namespace prometheus {
     // --- SimpleAPI: easy to use from the user's side, non-trivial internally.
     // --- Reference constructors (counter_t<value_type&>) ------------------------
 
+    /// @brief Default-constructs an unbound reference counter.
+    ///        Must be reassigned via operator= before meaningful use.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    counter_t()
+      : Metric(), val(null_atomic<value_type>()), snapshot_value(0) {}
+
     /// @brief Constructs a reference counter that binds to an existing owning counter.
     /// @param other Owning counter whose atomic value and labels are referenced.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
@@ -107,9 +113,17 @@ namespace prometheus {
     /// @param help   Help/description string.
     /// @param labels Constant base labels for the family.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    counter_t(const std::string& name, const std::string& help = {}, const labels_t& labels = {})
+    counter_t(const std::string& name, const std::string& help, const labels_t& labels = {})
       // global_registry::Add() -> Family::Add<counter_t<value_type>>() -> counter_t<value_type>& -> counter_t<value_type&>
       : counter_t(global_registry.Add(name, help).Add<counter_t<value_type> >(labels)) {}
+
+    /// @brief Constructs a reference counter using the global registry.
+    /// @param name   Metric family name.
+    /// @param labels Constant base labels for the family.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    counter_t(const std::string& name, const labels_t& labels = {})
+      // global_registry::Add() -> Family::Add<counter_t<value_type>>() -> counter_t<value_type>& -> counter_t<value_type&>
+      : counter_t(global_registry.Add(name).Add<counter_t<value_type> >(labels)) {}
 
     // --- Conversion: owning → reference -----------------------------------------
 
@@ -129,6 +143,38 @@ namespace prometheus {
     /// @brief Owning counters are non-copy-assignable.
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
     counter_t& operator=(const counter_t&) = delete;
+
+    // --- Reference form: copy/move constructible and assignable ------------------
+
+    /// @brief Reference counters are copy-constructible (rebinds to the same atomic).
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    counter_t(const counter_t& other)
+      : Metric(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
+
+    /// @brief Reference counters are move-constructible.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    counter_t(counter_t&& other)
+      : Metric(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
+
+    /// @brief Reference counters support copy-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    counter_t& operator=(const counter_t& other) {
+      if (this != &other) {
+        this->~counter_t();
+        new (this) counter_t(other);
+      }
+      return *this;
+    }
+
+    /// @brief Reference counters support move-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    counter_t& operator=(counter_t&& other) {
+      if (this != &other) {
+        this->~counter_t();
+        new (this) counter_t(std::move(other));
+      }
+      return *this;
+    }
 
     // --- Public API (shared by both owning and reference forms) -----------------
 

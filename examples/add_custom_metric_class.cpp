@@ -85,6 +85,11 @@ public:
 
   // --- Reference constructors (min_max_t<value_type&>) ------------------------
 
+  /// @brief Default-constructs an unbound reference counter. Must be reassigned via operator= before meaningful use.
+  template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+  min_max_t()
+    : Metric(), current_min(null_atomic<value_type>()), current_max(null_atomic<value_type>()), count(null_atomic<value_type>()) {}
+
   /// @brief Constructs a reference metric that binds to an existing owning metric.
   template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
   min_max_t(min_max_t<value_type>& other)
@@ -102,18 +107,23 @@ public:
 
   /// @brief Constructs a reference metric, creating both family and metric in the given registry.
   template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-  min_max_t(Registry& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
+  min_max_t(Registry& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
     : min_max_t(registry.Add(name, help).Add<min_max_t<value_type>>(labels)) {}
 
   /// @brief Constructs a reference metric, creating both family and metric in the given registry shared ptr.
   template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-  min_max_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
+  min_max_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
     : min_max_t(registry->Add(name, help).Add<min_max_t<value_type>>(labels)) {}
 
   /// @brief Constructs a reference metric using the global registry.
   template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
   min_max_t(const std::string& name, const std::string& help, const labels_t& labels = {})
     : min_max_t(global_registry.Add(name, help).Add<min_max_t<value_type>>(labels)) {}
+
+  /// @brief Constructs a reference metric using the global registry.
+  template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+  min_max_t(const std::string& name, const labels_t& labels = {})
+    : min_max_t(global_registry.Add(name).Add<min_max_t<value_type>>(labels)) {}
 
   // --- Non-copyable (owning form only) ----------------------------------------
 
@@ -122,6 +132,38 @@ public:
 
   template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
   min_max_t& operator=(const min_max_t&) = delete;
+
+  // --- Reference form: copy/move constructible ---------------------------------
+
+  /// @brief Reference min_max metrics are copy-constructible (rebinds to the same atomics).
+  template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+  min_max_t(const min_max_t& other)
+    : Metric(other.labels_ptr), current_min(other.current_min), current_max(other.current_max), count(other.count) {}
+
+  /// @brief Reference min_max metrics are move-constructible.
+  template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+  min_max_t(min_max_t&& other)
+    : Metric(other.labels_ptr), current_min(other.current_min), current_max(other.current_max), count(other.count) {}
+
+  /// @brief Reference min_max metrics support copy-assignment by rebinding via placement new.
+  template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+  min_max_t& operator=(const min_max_t& other) {
+    if (this != &other) {
+      this->~min_max_t();
+      new (this) min_max_t(other);
+    }
+    return *this;
+  }
+
+  /// @brief Reference min_max metrics support move-assignment by rebinding via placement new.
+  template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+  min_max_t& operator=(min_max_t&& other) {
+    if (this != &other) {
+      this->~min_max_t();
+      new (this) min_max_t(std::move(other));
+    }
+    return *this;
+  }
 
   // --- Public API -------------------------------------------------------------
 

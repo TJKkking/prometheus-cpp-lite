@@ -335,13 +335,13 @@ target_link_libraries(your_target prometheus-cpp-lite-full)
 #include <prometheus/counter.h>
 
 void handle_request() {
-  prometheus::counter_metric_t requests ("http_requests_total", "Total requests");
+  prometheus::counter_metric_t requests ("http_requests_total");
   requests++;
 }
 
 void handle_error() {
-  prometheus::counter_metric_t errors   ("http_errors_total",   "Total errors");
-  prometheus::counter_metric_t requests ("http_requests_total", "Total requests");
+  prometheus::counter_metric_t errors   ("http_errors_total");
+  prometheus::counter_metric_t requests ("http_requests_total");
   // ^ same metric as in handle_request() — same name, same global registry
   errors++;
   requests++;
@@ -359,7 +359,15 @@ variables, no passing references around.
 
 // Call this once at startup, e.g. in main():
 prometheus::http_server.start("127.0.0.1:9100");
-// → http://localhost:9100/metrics — all metrics from all files are here
+```
+
+curl http://localhost:9100/metrics:
+
+```
+# TYPE http_errors_total counter
+http_errors_total 1
+# TYPE http_requests_total counter
+http_requests_total 2
 ```
 
 That's it. Every metric you created in step 2 is automatically available
@@ -421,7 +429,7 @@ you want to profile:
 #include <prometheus/benchmark.h>
 
 void process_order(const Order& order) {
-  prometheus::benchmark_metric_t timer ("process_order_seconds", "Time spent in process_order");
+  prometheus::benchmark_metric_t timer ("process_order_seconds");
   timer.start();
 
   // ... existing code, unchanged ...
@@ -622,13 +630,15 @@ move to more explicit forms only when you need fine-grained control:
 
 | Level                              | Description                                         | Example                                                            |
 |------------------------------------|-----------------------------------------------------|--------------------------------------------------------------------|
-| **Simple** with `global_registry`  | Global registry, implicit family, operator syntax   | `counter_metric_t m ("name", "help", {{"k","v"}});`<br>`m++;` |
-| **Simple** with explicit `registry`| Explicit registry, implicit family, operator syntax | `registry_t r;`<br>`counter_metric_t m (r, "name", "help", {{"k","v"}});`<br>`m++;` |
-| **Family** with `global_registry`  | Global registry, explicit family with family labels | `family_t f ("name", "help", {{"k","v"}});`<br>`counter_metric_t m (f, {{"k","v"}});`<br>`m++;` |
-| **Family** with explicit `registry`| Explicit registry and family with family labels     | `registry_t r;`<br>`family_t f (r, "name", "help", {{"k","v"}});`<br>`counter_metric_t m (f, {{"k","v"}});`<br>`m++;` |
+| **Simple** with `global_registry`  | Global registry, implicit family, operator syntax   | `counter_metric_t m1 ("name1");`<br>`counter_metric_t m2 ("name2", "help2");`<br>`counter_metric_t m3 ("name3", "help3", {{"k","v"}});`<br>`m1++; m2++; m3++` |
+| **Simple** with explicit `registry`| Explicit registry, implicit family, operator syntax | `counter_metric_t m1 (r, "name1");`<br>`counter_metric_t m2 (r, "name2", "help2");`<br>`counter_metric_t m3 (r, "name3", "help3", {{"k","v"}});`<br>`m1++; m2++; m3++` |
+| **Family** with `global_registry`  | Global registry, explicit family with family labels | `family_t f1 ("name1");`<br>`family_t f2 ("name2", "help2");`<br>`family_t f3 ("name3", "help3", {{"k","v"}});`<br>`counter_metric_t m1 (f1);`<br>`counter_metric_t m2 (f2, {{"k","v"}});`<br>`m1++; m2++` |
+| **Family** with explicit `registry`| Explicit registry and family with family labels     | `registry_t r;`<br>`family_t f1 (r, "name1");`<br>`family_t f2 (r, "name2", "help2");`<br>`family_t f3 (r, "name3", "help3", {{"k","v"}});`<br>`counter_metric_t m1 (f1);`<br>`counter_metric_t m2 (f2, {{"k","v"}});`<br>`m1++; m2++` |
 | **Custom family**                  | Compile-time type safety for families               | `counter_family_t f ("name", "help", {{"k","v"}});`<br>`counter_metric_t m (f, {{"k","v"}});`<br>`m++;` |
 | **Custom types of metric values**  | Customisation values types of metrics               | `counter_t<double&> m ("name", "help", {{"k","v"}});`<br>`m++;` |
-| **`prometheus-cpp` compatible**    | Builder pattern, raw references                     | `auto  r = std::make_shared<prometheus::Registry>();`<br>`auto& f = BuildCounter().Name("nm").Help("hlp").Labels({{"k","v"}}).Register(r)`<br>`auto& m = f.Add({{"k","v"}});`<br>`m.Increment();` |
+| **`prometheus-cpp` compatible**    | Builder pattern, raw references                     | `auto  r = std::make_shared<prometheus::Registry>();`<br>`auto& f = BuildCounter() .Name("name") .Help("help") .Labels({{"k","v"}}) .Register(r)`<br>`auto& m = f.Add({{"k","v"}});`<br>`m.Increment();` |
+| **`prometheus-cpp-lite` v1.0 compatible** | create reference via family.Add() | `counter_family_t f ("name", "help", {{"k","v"}});`<br>`counter_metric_t m (f.Add({{"k","v"}}));`<br>`m++;` |
+| **`prometheus-cpp-lite` v1.0 compatible** | default empty metric reference constructor | `counter_metric_t m;`<br>`counter_family_t f ("name", "help", {{"k","v"}});`<br>`m = f.Add({{"k","v"}}));`<br>`m++;` |
 
 All levels are interoperable - metrics created with any style end up in the
 same registry and are serialized together.
@@ -668,16 +678,16 @@ toward the updated API.
 
 ### API changes
 
-|                            | v1.0                                                 | v2.0                                                                      |
-|----------------------------|------------------------------------------------------|---------------------------------------------------------------------------|
-| simpleAPI primary namespace| `prometheus::simpleapi::`                            | `prometheus::`                                                            |
-| Creating a family          | `simpleapi::counter_family_t f {"name", "help", {{"k","v"}}};` | `family_t f {"name", "help", {{"k","v"}}};`<br>`family_t f {registry, "name", "help", {{"k","v"}}};`<br>`counter_family_t f {"name", "help", {{"k","v"}}};`<br>`counter_family_t f {registry, "name", "help", {{"k","v"}}};` |
-| Creating a metric (simple) | `simpleapi::counter_metric_t m {"name", "help", {{"k","v"}}};` | `counter_metric_t m {"name", "help", {{"k","v"}}};`<br>`counter_metric_t m {registry, "name", "help", {{"k","v"}}};` |
-| Creating a metric in family| `simpleapi::counter_metric_t m {family.Add(l)};`     | `counter_metric_t m {family, {{"k","v"}}};`<br>`counter_metric_t m {family.Add({{"k","v"}})};` |
-| Networking classes         | `SaveToFile`, `PushToServer`                         | `file_saver_t`, `http_pusher_t`                                           |
-| HTTP pull server           | not available                                        | `http_server_t` (new)                                                     |
-| `prometheus-cpp` compat    | partial                                              | full (added `Exposer` and `Gateway` aliases)                              |
-| New metric types           | —                                                    | `info_t`                                                                  |
+|                            | v1.0              | v2.0                       |
+|----------------------------|-------------------|----------------------------|
+| simpleAPI primary namespace| `prometheus::simpleapi::` | `prometheus::` |
+| Creating a family          | `simpleapi::counter_family_t f {"name", "help", {{"k","v"}}};` | `family_t f1 {"name"};`<br>`family_t f2 {"name", {{"k","v"}}};`<br>`family_t f3 {"name", "help"};`<br>`family_t f4 {"name", "help", {{"k","v"}}};`<br>`family_t f5 {registry, "name", "help", {{"k","v"}}};`<br>`counter_family_t f6 {"name", "help", {{"k","v"}}};`<br>`counter_family_t f7 {registry, "name", "help", {{"k","v"}}};` |
+| Creating a metric (simple) | `simpleapi::counter_metric_t m {"name", "help", {{"k","v"}}};` | `counter_metric_t m1 {"name"};`<br>`counter_metric_t m2 {"name", {{"k","v"}}};`<br>`counter_metric_t m3 {"name", "help"};`<br>`counter_metric_t m4 {"name", "help", {{"k","v"}}};`<br>`counter_metric_t m5 {registry, "name", "help", {{"k","v"}}};` |
+| Creating a metric in family| `simpleapi::counter_metric_t m {family.Add(l)};` | `counter_metric_t m1 {family, {{"k","v"}}};`<br>`counter_metric_t m2 {family.Add({{"k","v"}})};`<br>`counter_metric_t m3;`<br>`m3 = family.Add({{"k","v"}})};` |
+| Networking classes         | `SaveToFile`, `PushToServer` | `file_saver_t`, `http_pusher_t`                                           |
+| HTTP pull server           | not available  | `http_server_t` (new)                                                     |
+| `prometheus-cpp` compat    | partial        | full (added `Exposer` and `Gateway` aliases)                              |
+| New metric types           | —                            | `info_t` |
 
 ### What stayed the same (backward compatibility)
 

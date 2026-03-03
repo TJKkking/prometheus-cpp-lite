@@ -25,8 +25,7 @@
 
 namespace prometheus {
 
-  using namespace std::chrono_literals;
-  using namespace ipsockets;
+  using ipsockets::log_e;
 
   /// @brief Simple HTTP server that exposes Prometheus metrics via pull endpoints.
   ///
@@ -52,8 +51,8 @@ namespace prometheus {
   /// @endcode
   class http_server_t {
 
-    using tcp_server_t = tcp_socket_t<v4, socket_type_e::server>;
-    using tcp_client_t = tcp_socket_t<v4, socket_type_e::client>;
+    using tcp_server_t = ipsockets::tcp_socket_t<ipsockets::v4, ipsockets::socket_type_e::server>;
+    using tcp_client_t = ipsockets::tcp_socket_t<ipsockets::v4, ipsockets::socket_type_e::client>;
     using endpoints_t  = std::unordered_map<std::string, std::shared_ptr<registry_t>>;
 
     endpoints_t        endpoints;        /// @brief Map from URL path to a shared registry.
@@ -62,7 +61,7 @@ namespace prometheus {
     std::thread        worker_thread;
     std::atomic<bool>  must_die       { false };
 
-    addr4_t            server_address { "0.0.0.0", 9100 };
+    ipsockets::addr4_t server_address { "0.0.0.0", 9100 };
     tcp_server_t       server_socket  { log_e::error };
 
   public:
@@ -82,7 +81,7 @@ namespace prometheus {
     /// Use add_endpoint() to register paths.
     /// @param server_address_ Address and port to listen on.
     /// @param log_level       Socket logging level (default: log_e::error).
-    http_server_t(addr4_t server_address_, log_e log_level = log_e::error)
+    http_server_t(ipsockets::addr4_t server_address_, log_e log_level = log_e::error)
       : server_address(server_address_), server_socket(log_level) {
       start();
     }
@@ -100,7 +99,7 @@ namespace prometheus {
     /// @param registry_       Shared pointer to the registry to expose.
     /// @param path_           URL path to serve metrics at (default: "/metrics").
     /// @param log_level       Socket logging level (default: log_e::error).
-    http_server_t(addr4_t server_address_, std::shared_ptr<registry_t> registry_, const std::string& path_ = "/metrics", log_e log_level = log_e::error)
+    http_server_t(ipsockets::addr4_t server_address_, std::shared_ptr<registry_t> registry_, const std::string& path_ = "/metrics", log_e log_level = log_e::error)
       : server_address(server_address_), server_socket(log_level) {
       add_endpoint(std::move(registry_), path_);
       start();
@@ -111,7 +110,7 @@ namespace prometheus {
     /// @param server_address_ Address and port to listen on.
     /// @param path_           URL path to serve metrics at (default: "/metrics").
     /// @param log_level       Socket logging level (default: log_e::error).
-    http_server_t(std::shared_ptr<registry_t> registry_, addr4_t server_address_, const std::string& path_ = "/metrics", log_e log_level = log_e::error)
+    http_server_t(std::shared_ptr<registry_t> registry_, ipsockets::addr4_t server_address_, const std::string& path_ = "/metrics", log_e log_level = log_e::error)
       : server_address(server_address_), server_socket(log_level) {
       add_endpoint(std::move(registry_), path_);
       start();
@@ -122,7 +121,7 @@ namespace prometheus {
     /// @param server_address_ Address and port to listen on.
     /// @param path_           URL path to serve metrics at (default: "/metrics").
     /// @param log_level       Socket logging level (default: log_e::error).
-    http_server_t(registry_t& registry_, addr4_t server_address_, const std::string& path_ = "/metrics", log_e log_level = log_e::error)
+    http_server_t(registry_t& registry_, ipsockets::addr4_t server_address_, const std::string& path_ = "/metrics", log_e log_level = log_e::error)
       : server_address(server_address_), server_socket(log_level) {
       add_endpoint(make_non_owning(registry_), path_);
       start();
@@ -223,13 +222,13 @@ namespace prometheus {
 
     /// @brief Sets the server listen address (does not restart automatically).
     /// @param server_address_ New address and port.
-    void set_server_address(addr4_t server_address_) {
+    void set_server_address(ipsockets::addr4_t server_address_) {
       server_address = server_address_;
     }
 
     /// @brief Sets the server address and starts listening.
     /// @param server_address_ Address and port to listen on.
-    void start(addr4_t server_address_, log_e log_level = log_e::error) {
+    void start(ipsockets::addr4_t server_address_, log_e log_level = log_e::error) {
       set_server_address(server_address_);
       set_log_level(log_level);
       start();
@@ -264,22 +263,22 @@ namespace prometheus {
     void worker_function() {
 
       while (true) {
-        if (server_socket.open(server_address) == no_error) {
-          addr4_t accepted_client_addr;
+        if (server_socket.open(server_address) == ipsockets::no_error) {
+          ipsockets::addr4_t accepted_client_addr;
 
           // List of tasks for handling clients.
           std::list<std::future<void>> accepted_clients_futures;
 
           // Main loop for accepting new clients.
-          while (server_socket.state == state_e::state_opened) {
+          while (server_socket.state == ipsockets::state_e::state_opened) {
             tcp_client_t accepted_client = server_socket.accept(accepted_client_addr);
-            if (accepted_client.state == state_e::state_opened) {
+            if (accepted_client.state == ipsockets::state_e::state_opened) {
               accepted_clients_futures.emplace_back(
                 std::async(std::launch::async, &http_server_t::accepted_client_func, this, std::move(accepted_client)));
 
               // Prune completed tasks.
               for (std::list<std::future<void>>::iterator it = accepted_clients_futures.begin(); it != accepted_clients_futures.end();) {
-                if (it->wait_for(0s) == std::future_status::ready)
+                if (it->wait_for(std::chrono::seconds(0)) == std::future_status::ready)
                   it = accepted_clients_futures.erase(it);
                 else
                   ++it;
@@ -297,7 +296,7 @@ namespace prometheus {
 
         // Retry after a short delay, checking must_die frequently.
         for (int i = 0; i < 10 && !must_die; ++i)
-          std::this_thread::sleep_for(1s);
+          std::this_thread::sleep_for(std::chrono::seconds(1));
 
         if (must_die)
           return;
@@ -368,7 +367,7 @@ namespace prometheus {
       std::string path = extract_request_path(buffer.data(), res);
       if (path.empty()) {
         if (server_socket.log_level <= log_e::error)
-          std::cout << "http_server_t: 400 Bad Request (could not parse request path)" << std::endl;
+            std::cout << "http_server_t: 400 Bad Request (could not parse request path)" << std::endl;
         send_404(accepted_client);
         return;
       }
