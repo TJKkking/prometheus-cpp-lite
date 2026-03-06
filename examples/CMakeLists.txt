@@ -5,7 +5,7 @@ function(add_example NAME_EXAMPLE REQUIRED_TARGETS)
 
   add_executable        (${SUBPROJECT_NAME} ${CMAKE_CURRENT_LIST_DIR}/${NAME_EXAMPLE}.cpp)
   target_link_libraries (${SUBPROJECT_NAME} ${REQUIRED_TARGETS})
-  set_target_properties (${SUBPROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/examples)
+  set_target_properties (${SUBPROJECT_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
 endfunction()
 
 # Core examples (no networking required)

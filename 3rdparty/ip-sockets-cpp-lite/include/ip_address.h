@@ -27,17 +27,19 @@
 
   #define COMMON_LITTLE_ENDIAN 1
   
-  #define bswap_16(x) __builtin_bswap16(x)
-  #define bswap_32(x) __builtin_bswap32(x)
-  #define bswap_64(x) __builtin_bswap64(x)
+  #include <byteswap.h>
+  //#define bswap_16(x) __builtin_bswap16(x)
+  //#define bswap_32(x) __builtin_bswap32(x)
+  //#define bswap_64(x) __builtin_bswap64(x)
 
 #elif defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 
   #define COMMON_LITTLE_ENDIAN 0
   
-  #define bswap_16(x) __builtin_bswap16(x)
-  #define bswap_32(x) __builtin_bswap32(x)
-  #define bswap_64(x) __builtin_bswap64(x)
+  #include <byteswap.h>
+  //#define bswap_16(x) __builtin_bswap16(x)
+  //#define bswap_32(x) __builtin_bswap32(x)
+  //#define bswap_64(x) __builtin_bswap64(x)
 
 #else
 
@@ -170,8 +172,12 @@ namespace ipsockets {
         value++;
       }
 
-      if (state == error)
+      if (state == error || state == start) {
         *this = ip4_t {};
+        if (success)
+          *success = false;
+        return *this;
+      }
       else if (octet != 0) {
         if (accum > 0xff)
           *this = ip4_t {};
@@ -193,7 +199,7 @@ namespace ipsockets {
         *((uint32_t*)this) = orders::htonT (accum);
 
       if (success)
-        *success = (state != error);
+        *success = true;
 
       return *this;
     }
@@ -274,7 +280,9 @@ namespace ipsockets {
     }
 
     ip4_t operator& (const ip4_t& other) {
-      return *((uint32_t*)this) & *((uint32_t*)&other);
+      ip4_t result;
+      *((uint32_t*)&result) = *((uint32_t*)this) & *((uint32_t*)&other);
+      return result;
     }
 
     void operator&= (const ip4_t& other) {
@@ -406,7 +414,7 @@ namespace ipsockets {
         value++;
       }
 
-      if ((index_dec != 0 && index_dec != 3) || (index_dec == 0 && accum_hex > 0xffff) || (index_dec == 3 && accum_dec > 0xff))
+      if ((state == start && separator == SIZE_MAX) || (index_dec != 0 && index_dec != 3) || (index_dec == 0 && accum_hex > 0xffff) || (index_dec == 3 && accum_dec > 0xff))
         state = error;
 
       if (state == error) {
@@ -417,7 +425,7 @@ namespace ipsockets {
       }
 
       if (index_dec == 3) { // found an ipv4 address in the end, then the last two numbers of ipv6 will be formed from this ipv4 address
-        if (index_hex == 0 && separator == SIZE_MAX) // if there is nothing at front of ipv4 address, then the ipv4 address shuld be written as ipv4 over ipv6 ::ffff:x.x.x.x
+        if (index_hex == 0) // if there is nothing at front of ipv4 address, then the ipv4 address should be written as ipv4 over ipv6 ::ffff:x.x.x.x
           result_hex[index_hex++] = 0xffff;
         result_hex[index_hex++] = (result_dec[0] << 8) | result_dec[1];
         result_hex[index_hex++] = (result_dec[2] << 8) | (uint8_t)accum_dec;
@@ -1012,7 +1020,7 @@ namespace ipsockets {
   ///
   /// @code
   ///   prefix4_t p1 = "192.168.1.0/24";
-  ///   prefix4_t p2 (24, ip4_t("192.168.1.100"));
+  ///   prefix4_t p2 (ip4_t("192.168.1.100"), 24);
   ///   std::cout << p1;                       // "192.168.1.0/24"
   ///   std::cout << p1.contains("192.168.1.5"); // true
   ///   std::cout << p1.network();             // "192.168.1.0"
@@ -1037,11 +1045,11 @@ namespace ipsockets {
     ip_prefix_t (const ip_t<Ip_type>& ip_)
       : length (max_length), ip (ip_) {}
 
-    /// @brief Constructs a prefix from a length and IP address.
-    /// @param t_length - Prefix length in bits.
-    /// @param ip_     - IP address (host bits beyond t_length are masked off).
+    /// @brief Constructs a prefix from an IP address and prefix length.
+    /// @param ip_     - IP address (host bits beyond length_ are masked off).
+    /// @param length_ - Prefix length in bits.
     /// @details The IP address is automatically masked to the given prefix length,
-    ///   so ip_prefix_t(24, "192.168.1.100") produces "192.168.1.0/24".
+    ///   so ip_prefix_t(ip4_t("192.168.1.100"), 24) produces "192.168.1.0/24".
     ip_prefix_t (const ip_t<Ip_type>& ip_, uint8_t length_)
       : length (length_) {
       assert (length_ <= max_length);

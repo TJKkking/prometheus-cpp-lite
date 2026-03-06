@@ -270,9 +270,9 @@ namespace prometheus {
           std::list<std::future<void>> accepted_clients_futures;
 
           // Main loop for accepting new clients.
-          while (server_socket.state == ipsockets::state_e::state_opened) {
+          while (server_socket.state == ipsockets::state_e::opened) {
             tcp_client_t accepted_client = server_socket.accept(accepted_client_addr);
-            if (accepted_client.state == ipsockets::state_e::state_opened) {
+            if (accepted_client.state == ipsockets::state_e::opened) {
               accepted_clients_futures.emplace_back(
                 std::async(std::launch::async, &http_server_t::accepted_client_func, this, std::move(accepted_client)));
 

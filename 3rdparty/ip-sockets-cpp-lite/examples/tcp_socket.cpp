@@ -10,18 +10,18 @@ using namespace ipsockets;
 
 #if true
 // server and client work on IPv4 mode
-static const ip_type_e cfg_ip_type = v4;
-static const addr4_t   cfg_server  = "127.0.0.1:2000";
-static const addr4_t   cfg_client  = "127.0.0.1:2000";
+static const ip_type_e ip_type = v4;
+static const addr4_t   ip_server  = "127.0.0.1:2000";
+static const addr4_t   ip_client  = "127.0.0.1:2000";
 #else
 // server and client work on IPv6 mode
-static const ip_type_e cfg_ip_type = v6;
-static const addr6_t   cfg_server  = "[::1]:2000";
-static const addr6_t   cfg_client  = "[::1]:2000";
+static const ip_type_e ip_type = v6;
+static const addr6_t   ip_server  = "[::1]:2000";
+static const addr6_t   ip_client  = "[::1]:2000";
 #endif
 
-using tcp_server_t = tcp_socket_t<cfg_ip_type, socket_type_e::server>;
-using tcp_client_t = tcp_socket_t<cfg_ip_type, socket_type_e::client>;
+using tcp_server_t = tcp_socket_t<ip_type, socket_type_e::server>;
+using tcp_client_t = tcp_socket_t<ip_type, socket_type_e::client>;
 
 // Handles a single client connection.
 // All accepted connections will be automatically closed when will be closed main server connection
@@ -55,14 +55,16 @@ void accepted_client_func (tcp_client_t accepted_client) {
 bool shutdown_server = false;
 tcp_server_t server_sock (log_e::debug);
 void server_func () {
-  if (server_sock.open (cfg_server) == ipsockets::no_error) {
-    addr_t<cfg_ip_type> accepted_client_addr;
+  uint32_t timeout_ms    = 1000; // recv/send timeout in ms (SO_RCVTIMEO), also affects accept() timeout on Linux
+  int max_incoming_queue = 1000; // maximum number of pending connections in the listen queue
+  if (server_sock.open (ip_server, timeout_ms, max_incoming_queue) == ipsockets::no_error) {
+    addr_t<ip_type> accepted_client_addr;
 
     while (shutdown_server == false) {
 
       // accept() waiting new connections until server socket will be closed
       tcp_client_t accepted_client = server_sock.accept (accepted_client_addr);
-      if (accepted_client.state == state_e::state_opened) {
+      if (accepted_client.state == state_e::opened) {
         // fire-and-forget thread for this connection
         printf ("server: accept new connection\n");
         std::thread accepted_thread = std::thread (accepted_client_func, std::move (accepted_client));
@@ -79,8 +81,13 @@ void server_func () {
 
 // Simple client sending periodic requests.
 void client_func () {
+  // small delay to let server start listening
+  std::this_thread::sleep_for (std::chrono::milliseconds (200));
+
   tcp_client_t sock (log_e::debug);
-  if (sock.open (cfg_client) == ipsockets::no_error) {
+  uint32_t timeout_ms         = 1000; // recv/send timeout in ms (SO_RCVTIMEO)
+  uint32_t connect_timeout_ms = 5000; // connect timeout in ms (max wait for TCP handshake to complete)
+  if (sock.open (ip_client, timeout_ms, connect_timeout_ms) == ipsockets::no_error) {
 
     for (size_t i = 0; i < 5; i++) {
       std::this_thread::sleep_for (std::chrono::seconds (4));

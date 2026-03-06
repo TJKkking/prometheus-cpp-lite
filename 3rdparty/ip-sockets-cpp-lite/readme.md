@@ -85,6 +85,7 @@ Keep it simple. Keep it portable.
 * Blocking I/O with timeouts
 * Configurable logging
 * Clear states and error codes
+* **RAW mode** — send hand-crafted IP packets with custom headers (IP_HDRINCL)
 
 ### 🔌 TCP Sockets (`tcp_socket.h`)
 
@@ -308,12 +309,41 @@ stream << "RESULT " << (a + b) << std::endl;
 
 See [`examples/tcp_stream.cpp`](examples/tcp_stream.cpp) for complete working examples including a line-by-line echo server and a stream-based calculator.
 
+### 🔧 RAW Socket — send packets with custom IP headers
+
+RAW sockets allow you to build the entire IP packet manually (IP header + any protocol payload)
+with full control over every header field — including the source IP address
+(useful for traffic forwarding, spoofing, or implementing custom protocols).
+
+```cpp
+// Create a RAW socket (requires administrator/root privileges)
+udp_socket_t<v4, socket_type_e::client> sock (log_e::debug, udp_type_e::raw);
+sock.open("127.0.0.1:9000");
+
+// Build IP + UDP + payload manually, then send
+char packet[1500];
+int  len = build_raw_packet(packet, sizeof(packet), src_addr, dst_addr, "Hello", 6);
+sock.sendto(packet, len, dst_addr);
+```
+
+The log shows `raw<...>` prefix so you can distinguish RAW from regular UDP sockets:
+```
+raw<ip4,client>: [3].open()   [undefined <> 127.0.0.1:9000] success, socket in RAW mode
+raw<ip4,client>: [3].sendto() [127.0.0.1:8000 -> 127.0.0.1:9000] sended 34 bytes
+```
+
+> **Note:** RAW sockets require administrator privileges on Windows or root/CAP_NET_RAW on Linux.
+> Only `sendto()` and `recvfrom()` are available in RAW mode; `send()` and `recv()` are blocked.
+
+See [`examples/raw_socket.cpp`](examples/raw_socket.cpp) for a working send example.
+
 ### 📚 More Examples
 Check out the [`examples/`](examples) directory for complete working examples:
 * [`ip_address.cpp`](examples/ip_address.cpp)     - all IP address manipulation features
 * [`udp_socket.cpp`](examples/udp_socket.cpp)     - UDP client-server interaction
 * [`tcp_socket.cpp`](examples/tcp_socket.cpp)     - TCP client-server interaction
 * [`tcp_stream.cpp`](examples/tcp_stream.cpp)     - TCP iostream interface (<<, >>, getline over network)
+* [`raw_socket.cpp`](examples/raw_socket.cpp)     - RAW socket: sending packets with custom IP headers
 * [`resolve_host.cpp`](examples/resolve_host.cpp) - resolving host to ipv4/ipv6 address example
 * [`http_server.cpp`](examples/http_server.cpp)   - compact multi-page HTTP server
 ---

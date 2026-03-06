@@ -12,10 +12,10 @@
 #include <prometheus/prometheus.h>
 
 int main() {
-  prometheus::gauge_metric_t   conn ("connections",   "Open connections");
-  prometheus::counter_metric_t get  ("http_requests", "HTTP requests", {{"method", "GET"}});
-  prometheus::counter_metric_t post ("http_requests", "HTTP requests", {{"method", "POST"}});
-  prometheus::http_server.start ("127.0.0.1:9100"); // default all metrics are exposed at /metrics
+  prometheus::gauge_metric_t   conn ("connections");
+  prometheus::counter_metric_t get  ("http_requests", {{"method", "GET"}});
+  prometheus::counter_metric_t post ("http_requests", {{"method", "POST"}});
+  prometheus::http_server.start ("127.0.0.1:9100"); // default all metrics are exposed at "/metrics"
 
   for (;;) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
@@ -34,20 +34,23 @@ using namespace prometheus;
 
 int main() {
   registry_t          registry;
-  gauge_metric_t      conn   (registry, "connections",   "Open connections", {{"host", "web01"}});
-  family_t            reqs   (registry, "http_requests", "HTTP requests",    {{"host", "web01"}});
-  counter_t<double&>  get    (reqs,     {{"method", "GET"},  {"status", "200"}});
-  counter_t<double&>  post   (reqs,     {{"method", "POST"}, {"status", "201"}});
-  http_server_t       server (registry, "127.0.0.1:9100", "/metrics/app", log_e::info);
+  gauge_metric_t      conn   (registry,  "connections",   "Open connections", {{"host", "web01"}});
+  family_t            reqs   (registry,  "http_requests", "HTTP requests",    {{"host", "web01"}});
+  counter_t<double&>  get    (reqs,      {{"method", "GET"},  {"status", "200"}});
+  counter_t<double&>  post   (reqs,      {{"method", "POST"}, {"status", "201"}});
+  http_server_t       server (registry,  "127.0.0.1:9100", "/metrics/app", log_e::info);
 
   registry_t          registry2;
+  benchmark_metric_t  uptime (registry2, "uptime_sec",     "Process uptime");
   server.add_endpoint(registry2, "/metrics/sys");
 
   for (;;) {
+    uptime.start();
     std::this_thread::sleep_for(std::chrono::seconds(1));
     conn  = 10 + std::rand() % 50;
     get  += 1.5;
     post += 0.75;
+    uptime.stop();
   }
 }
 ```

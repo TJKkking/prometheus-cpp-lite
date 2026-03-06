@@ -11,19 +11,19 @@ using namespace ipsockets;
 
 #if true
 // server and client work on IPv4 mode
-static const ip_type_e cfg_ip_type = v4;
-static const addr4_t   cfg_server  = "127.0.0.1:3000";
-static const addr4_t   cfg_client  = "127.0.0.1:3000";
+static const ip_type_e ip_type = v4;
+static const addr4_t   ip_server  = "127.0.0.1:3000";
+static const addr4_t   ip_client  = "127.0.0.1:3000";
 #else
 // server and client work on IPv6 mode
-static const ip_type_e cfg_ip_type = v6;
-static const addr6_t   cfg_server  = "[::1]:3000";
-static const addr6_t   cfg_client  = "[::1]:3000";
+static const ip_type_e ip_type = v6;
+static const addr6_t   ip_server  = "[::1]:3000";
+static const addr6_t   ip_client  = "[::1]:3000";
 #endif
 
-using tcp_server_t        = tcp_socket_t<cfg_ip_type, socket_type_e::server>;
-using tcp_client_t        = tcp_socket_t<cfg_ip_type, socket_type_e::client>;
-using tcp_stream_client_t = tcp_stream_t<cfg_ip_type, socket_type_e::client>;
+using tcp_server_t        = tcp_socket_t<ip_type, socket_type_e::server>;
+using tcp_client_t        = tcp_socket_t<ip_type, socket_type_e::client>;
+using tcp_stream_client_t = tcp_stream_t<ip_type, socket_type_e::client>;
 
 log_e socket_log_level = log_e::error;
 
@@ -36,17 +36,17 @@ tcp_server_t server_sock     { socket_log_level };
 
 void example_1_server () {
 
-  if (server_sock.open (cfg_server) != no_error)
+  if (server_sock.open (ip_server) != no_error)
     return;
 
-  printf ("[server] listening on %s\n", cfg_server.to_str ().c_str ());
+  printf ("[server] listening on %s\n", ip_server.to_str ().c_str ());
 
   while (!shutdown_server) {
 
-    addr_t<cfg_ip_type> client_addr;
+    addr_t<ip_type> client_addr;
     tcp_client_t        accepted = server_sock.accept (client_addr);
 
-    if (accepted.state != state_e::state_opened)
+    if (accepted.state != state_e::opened)
       continue;
 
     printf ("[server] client connected: %s\n", client_addr.to_str ().c_str ());
@@ -104,7 +104,7 @@ void example_1_client () {
 
   tcp_client_t sock (socket_log_level);
 
-  if (sock.open (cfg_client) != no_error) {
+  if (sock.open (ip_client) != no_error) {
     printf ("[client] failed to connect\n");
     return;
   }
@@ -170,15 +170,15 @@ void example_2_server_handler (tcp_client_t accepted) {
 void example_2_server () {
 
   tcp_server_t server (socket_log_level);
-  if (server.open ({cfg_client.ip, 3001}) != no_error)
+  if (server.open ({ip_client.ip, 3001}) != no_error)
     return;
 
   printf ("[server2] listening for calculator requests\n");
 
   for (int i = 0; i < 3; i++) {
-    addr_t<cfg_ip_type> client_addr;
+    addr_t<ip_type> client_addr;
     tcp_client_t accepted = server.accept (client_addr);
-    if (accepted.state == state_e::state_opened)
+    if (accepted.state == state_e::opened)
       example_2_server_handler (std::move (accepted));
   }
 
@@ -198,7 +198,7 @@ void example_2_client () {
 
   for (int i = 0; i < 3; i++) {
     tcp_client_t sock (socket_log_level);
-    if (sock.open ({cfg_client.ip, 3001}) != no_error) {
+    if (sock.open ({ip_client.ip, 3001}) != no_error) {
       printf ("[client2] failed to connect\n");
       continue;
     }
@@ -250,14 +250,14 @@ void example_3_server_handler (tcp_client_t accepted) {
 void example_3_server () {
 
   tcp_server_t server (socket_log_level);
-  if (server.open ({cfg_client.ip, 3002}) != no_error)
+  if (server.open ({ip_client.ip, 3002}) != no_error)
     return;
 
   printf ("[echo-server] listening\n");
 
-  addr_t<cfg_ip_type> client_addr;
+  addr_t<ip_type> client_addr;
   tcp_client_t        accepted = server.accept (client_addr);
-  if (accepted.state == state_e::state_opened)
+  if (accepted.state == state_e::opened)
     example_3_server_handler (std::move (accepted));
 
   printf ("[echo-server] shutdown\n");
@@ -268,7 +268,7 @@ void example_3_client () {
   std::this_thread::sleep_for (std::chrono::milliseconds (200));
 
   tcp_client_t sock (socket_log_level);
-  if (sock.open ({cfg_client.ip, 3002}) != no_error)
+  if (sock.open ({ip_client.ip, 3002}) != no_error)
     return;
 
   tcp_stream_client_t stream (std::move (sock));

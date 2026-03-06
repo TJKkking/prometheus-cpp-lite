@@ -397,6 +397,13 @@ void test_legacy_4() {
 // Legacy SimpleAPI examples
 // =============================================================================
 
+// suppress deprecation warnings - legacy API is intentionally used here to verify backward compatibility
+#ifdef _MSC_VER
+#pragma warning(disable: 4996)  // deprecated declaration
+#elif defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 #include <prometheus/simpleapi.h>
 
 // =============================================================================

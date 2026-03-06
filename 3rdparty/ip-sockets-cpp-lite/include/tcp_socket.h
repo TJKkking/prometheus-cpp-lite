@@ -23,26 +23,21 @@ namespace ipsockets {
     using base_socket_t = udp_socket_t<Ip_type, Socket_type>;
     using typename base_socket_t::address_t;
 
-    tcp_socket_t<Ip_type, socket_type_e::server>* parent = nullptr;
-    std::vector<socket_t>                         accept_clients;
+    tcp_socket_t<Ip_type, socket_type_e::server>* parent = nullptr; ///< Pointer to parent server socket (non-null only for accepted client sockets)
+    std::vector<socket_t>                         accept_clients;   ///< OS descriptors of accepted connections (server only); closed automatically in destructor
 
     ///	@brief Constructor for TCP socket.
     ///	@param log_level - Logging level for this socket instance (default: log_e::info).
     tcp_socket_t (log_e log_level = log_e::info)
-      : base_socket_t (log_level) {
-      this->type     = SOCK_STREAM;
-      this->protocol = IPPROTO_TCP;
-      this->tname    = std::string ("tcp<") + ((this->ip_type == v4) ? "ip4," : "ip6,")
-                     + ((this->socket_type == socket_type_e::server) ? "server>" : "client>");
-    }
-
-    tcp_socket_t (const tcp_socket_t& socket) = delete;
+      : base_socket_t (log_level, SOCK_STREAM, IPPROTO_TCP, _get_tname ()) {}
 
     tcp_socket_t (tcp_socket_t&& other_socket) : base_socket_t (std::move(other_socket)) {
       parent               = other_socket.parent;
       other_socket.parent  = nullptr;
       accept_clients       = std::move (other_socket.accept_clients);
     }
+
+    tcp_socket_t (const tcp_socket_t& socket) = delete;
 
     ~tcp_socket_t () {
       if (parent == nullptr)
@@ -51,39 +46,41 @@ namespace ipsockets {
       close ();
     }
 
-    ///	@brief Opens a TCP socket and performs binding/connection.
-    ///	@param address            - The address to bind to (for server) or connect to (for client).
-    ///	@param timeout_ms         - Receive timeout in milliseconds (default: 1000).
-    ///	@param max_incoming_queue - Maximum length of the pending connections queue for server sockets (default: 1000).
-    ///	@return Error code:
-    ///	  - no_error on success
-    ///	  - error_not_allowed if called on an accepted client socket
-    ///	  - error_already_opened if socket is already opened
-    ///	  - error_open_failed if socket creation or listen fails
-    ///	  - error_other for other errors
-    ///	@details For server sockets:
-    ///	  - Calls base class open() to create and bind the socket
-    ///	  - Calls listen() to mark socket as passive and accept incoming connections
-    ///	@details For client sockets:
-    ///	  - Simply calls base class open() to create and connect the socket
+    ///	@brief Opens a TCP server socket: binds to address and starts listening for incoming connections.
+    ///	@param address            - The local address:port to bind to.
+    ///	@param timeout_ms         - Receive timeout in milliseconds (SO_RCVTIMEO), also affects accept() timeout on Linux. Default: 1000.
+    ///	@param max_incoming_queue - Maximum number of pending connections in the listen queue. Default: 1000.
+    ///	@return no_error on success, error_open_failed on failure.
+    template <socket_type_e SOCK = Socket_type, std::enable_if_t<SOCK == socket_type_e::server, bool> = true>
     int open (const address_t& address, uint32_t timeout_ms = 1000, int max_incoming_queue = 1000) {
 
       if ( parent != nullptr ) return this->log_and_return ('<', "open", error_not_allowed);
 
       int result = base_socket_t::open (address, timeout_ms);
 
-      if (this->socket_type == socket_type_e::server) {
-        int res = listen (this->sock, max_incoming_queue); 
-
+      if (result == no_error) {
+        int res = listen (this->sock, max_incoming_queue);
         if (res == SOCKET_ERROR) {
           this->log_and_return ('-', "open", this->_get_err (), "listen");
-          closesocket (this->sock);
+          this->close ();
           return error_open_failed;
         }
       }
 
       return result;
+    }
 
+    ///	@brief Opens a TCP client socket: connects to remote address with timeout.
+    ///	@param address            - The remote address:port to connect to.
+    ///	@param timeout_ms         - Receive timeout in milliseconds (SO_RCVTIMEO). Default: 1000.
+    ///	@param connect_timeout_ms - Connect timeout in milliseconds (max wait for TCP handshake). Default: 5000.
+    ///	@return no_error on success, error_open_failed or error_timeout on failure.
+    template <socket_type_e SOCK = Socket_type, std::enable_if_t<SOCK == socket_type_e::client, bool> = true>
+    int open (const address_t& address, uint32_t timeout_ms = 1000, uint32_t connect_timeout_ms = 5000) {
+
+      if ( parent != nullptr ) return this->log_and_return ('<', "open", error_not_allowed);
+
+      return base_socket_t::open (address, timeout_ms, connect_timeout_ms);
     }
 
     ///	@brief Receives data on a connected TCP socket.
@@ -114,7 +111,7 @@ namespace ipsockets {
     ///	@return Error code or no_error on successful close.
     ///	@note Accepted sockets will be automatically closed when the server object is destroyed.
     int close () {
-      if (this->state == state_e::state_opened && parent)
+      if (this->state == state_e::opened && parent)
         for (size_t i = 0; i < parent->accept_clients.size (); i++)
           if (parent->accept_clients[i] == this->sock)
             parent->accept_clients.erase (parent->accept_clients.begin () + i);
@@ -142,7 +139,7 @@ namespace ipsockets {
 
       int cerr = no_error;
 
-      if (this->state       != state_e::state_opened) cerr = error_closed_or_not_open;
+      if (this->state       != state_e::opened) cerr = error_closed_or_not_open;
       if (this->socket_type != socket_type_e::server) cerr = error_not_allowed;
 
       if (cerr != no_error) {
@@ -195,7 +192,7 @@ namespace ipsockets {
 
       result.address_remote = address_from;
       result.address_local  = result._getsockname ();
-      result.state          = state_e::state_opened;
+      result.state          = state_e::opened;
       //result.log_level      = this->log_level; set via constructor
       result.parent         = this;
       result.tname          = std::string ("tcp<") + ((this->ip_type == v4) ? "ip4," : "ip6,") + "accept>";
@@ -206,6 +203,26 @@ namespace ipsockets {
         *success = true;
       return result;
 
+    }
+
+    ///	@brief Resolves a hostname to an IP address using DNS.
+    ///	@param      hostname  - Hostname to resolve (e.g., "example.com").
+    ///	@param[out] success   - Optional output flag. If non-null, set to true on successful resolution, false on failure.
+    ///	@param      log_level - Logging level for DNS resolution messages (default: log_e::error).
+    ///	@return ip_t<Ip_type> Resolved IP address. Returns empty IP (all zeros) on failure.
+    ///	@details Performs DNS lookup using getaddrinfo():
+    ///	  - For IPv4 sockets (Ip_type = v4) resolves to IPv4 addresses only
+    ///	  - For IPv6 sockets (Ip_type = v6) resolves to IPv6 addresses only
+    ///	  - Returns the first matching address found in DNS response
+    static inline ip_t<Ip_type> resolve (const std::string& hostname, bool* success = nullptr, log_e log_level = log_e::error) {
+      return udp_socket_t<Ip_type, Socket_type>::_resolve (hostname, success, log_level, _get_tname());
+    }
+
+  private:
+
+    /// @brief Returns default type name for logging in static methods (e.g. resolve()).
+    static inline std::string _get_tname () {
+      return std::string ("tcp<") + ((Ip_type == v4) ? "ip4," : "ip6,") + ((Socket_type == socket_type_e::server) ? "server>" : "client>");
     }
 
   };
