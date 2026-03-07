@@ -27,17 +27,19 @@
 
   #define COMMON_LITTLE_ENDIAN 1
   
-  #define bswap_16(x) __builtin_bswap16(x)
-  #define bswap_32(x) __builtin_bswap32(x)
-  #define bswap_64(x) __builtin_bswap64(x)
+  #include <byteswap.h>
+  //#define bswap_16(x) __builtin_bswap16(x)
+  //#define bswap_32(x) __builtin_bswap32(x)
+  //#define bswap_64(x) __builtin_bswap64(x)
 
 #elif defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 
   #define COMMON_LITTLE_ENDIAN 0
   
-  #define bswap_16(x) __builtin_bswap16(x)
-  #define bswap_32(x) __builtin_bswap32(x)
-  #define bswap_64(x) __builtin_bswap64(x)
+  #include <byteswap.h>
+  //#define bswap_16(x) __builtin_bswap16(x)
+  //#define bswap_32(x) __builtin_bswap32(x)
+  //#define bswap_64(x) __builtin_bswap64(x)
 
 #else
 
@@ -67,7 +69,8 @@ namespace orders {
 #include <iostream>
 #include <string>
 #include <cassert>
-#include <functional> // for std::hash
+#include <algorithm>   // std::copy_n
+#include <functional>  // std::hash
 
 // base classes for working with ipv4 and ipv6 addresses classes are based on standard std::array<uint, type>
 // and can be "overlayed" onto corresponding memory areas, for example:
@@ -169,8 +172,12 @@ namespace ipsockets {
         value++;
       }
 
-      if (state == error)
+      if (state == error || state == start) {
         *this = ip4_t {};
+        if (success)
+          *success = false;
+        return *this;
+      }
       else if (octet != 0) {
         if (accum > 0xff)
           *this = ip4_t {};
@@ -192,7 +199,7 @@ namespace ipsockets {
         *((uint32_t*)this) = orders::htonT (accum);
 
       if (success)
-        *success = (state != error);
+        *success = true;
 
       return *this;
     }
@@ -273,7 +280,9 @@ namespace ipsockets {
     }
 
     ip4_t operator& (const ip4_t& other) {
-      return *((uint32_t*)this) & *((uint32_t*)&other);
+      ip4_t result;
+      *((uint32_t*)&result) = *((uint32_t*)this) & *((uint32_t*)&other);
+      return result;
     }
 
     void operator&= (const ip4_t& other) {
@@ -405,7 +414,7 @@ namespace ipsockets {
         value++;
       }
 
-      if ((index_dec != 0 && index_dec != 3) || (index_dec == 0 && accum_hex > 0xffff) || (index_dec == 3 && accum_dec > 0xff))
+      if ((state == start && separator == SIZE_MAX) || (index_dec != 0 && index_dec != 3) || (index_dec == 0 && accum_hex > 0xffff) || (index_dec == 3 && accum_dec > 0xff))
         state = error;
 
       if (state == error) {
@@ -416,7 +425,7 @@ namespace ipsockets {
       }
 
       if (index_dec == 3) { // found an ipv4 address in the end, then the last two numbers of ipv6 will be formed from this ipv4 address
-        if (index_hex == 0 && separator == SIZE_MAX) // if there is nothing at front of ipv4 address, then the ipv4 address shuld be written as ipv4 over ipv6 ::ffff:x.x.x.x
+        if (index_hex == 0) // if there is nothing at front of ipv4 address, then the ipv4 address should be written as ipv4 over ipv6 ::ffff:x.x.x.x
           result_hex[index_hex++] = 0xffff;
         result_hex[index_hex++] = (result_dec[0] << 8) | result_dec[1];
         result_hex[index_hex++] = (result_dec[2] << 8) | (uint8_t)accum_dec;
@@ -940,9 +949,389 @@ namespace ipsockets {
   template <ip_type_e type>
   using addr_t = typename addr_t_<type>::type;
 
+
+  // ============================================================
+  // ip_prefix_raw_t — variable-length prefix overlay (C-style)
+  // ============================================================
+
+  /// @brief Raw variable-length IP prefix for zero-copy overlay on packed binary data.
+  /// Layout: [1 byte length_in_bits] [ceil(length/8) bytes of prefix value]
+  /// @note Uses flexible array member (compiler extension supported by GCC, Clang, MSVC).
+  ///   Do NOT create instances on the stack — use reinterpret_cast on a sufficiently large buffer.
+  #if defined(_MSC_VER)
+  #pragma warning(push)
+  #pragma warning(disable: 4200) // nonstandard extension: zero-sized array
+  #endif
+  #if defined(__GNUC__) || defined(__clang__)
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wpedantic"
+  #endif
+  struct ip_prefix_raw_t {
+    uint8_t length;   ///< Prefix length in bits (0..128)
+    uint8_t bytes[];  ///< Prefix value bytes (actual size = value_size())
+
+    /// @brief Returns the number of bytes needed to store 'length' bits.
+    uint8_t value_size () const {
+      return (uint8_t)((length >> 3) + ((length & 0x7) ? 1 : 0));
+    }
+
+    /// @brief Returns the total size of this prefix in bytes (1 byte for length + value bytes).
+    uint8_t size () const {
+      return (uint8_t)(1 + value_size ());
+    }
+
+    /// @brief Returns the value of a specific bit in the prefix (MSB-first order within each byte).
+    /// @param index - Bit index (0-based, must be < length).
+    bool get_bit (uint8_t index) const {
+      assert (index < length);
+      return (bytes[index >> 3] >> (7 - (index & 0x7))) & 0x1;
+    }
+  };
+  #if defined(__GNUC__) || defined(__clang__)
+  #pragma GCC diagnostic pop
+  #endif
+  #if defined(_MSC_VER)
+  #pragma warning(pop)
+  #endif
+
+  // ============================================================
+  // prefix4_t / prefix6_t / prefix_t<> — IP prefix (ip + length)
+  // ============================================================
+
+  /// @brief IP network prefix: an IP address combined with a prefix length (CIDR notation).
+  /// @details Represents a network prefix like "192.168.1.0/24" or "2001:db8::/32".
+  ///   The IP field stores the prefix value (network address with host bits masked),
+  ///   and the length field stores the number of significant bits.
+  ///
+  ///   Supports construction from:
+  ///   - IP address only (assumes full host prefix: /32 for IPv4, /128 for IPv6)
+  ///   - IP address + prefix length
+  ///   - CIDR string ("192.168.1.0/24" or "2001:db8::/32")
+  ///   - Raw binary prefix (ip_prefix_raw_t)
+  ///
+  ///   Also supports:
+  ///   - Bit-level access (get_bit)
+  ///   - Bit-level construction (push_back_bit, operator<<)
+  ///   - Containment check (contains)
+  ///   - Network address extraction (network)
+  ///   - CIDR string conversion (to_str)
+  ///   - Comparison and hashing
+  ///   - Conversion to raw overlay (operator const ip_prefix_raw_t&)
+  ///
+  /// @code
+  ///   prefix4_t p1 = "192.168.1.0/24";
+  ///   prefix4_t p2 (ip4_t("192.168.1.100"), 24);
+  ///   std::cout << p1;                       // "192.168.1.0/24"
+  ///   std::cout << p1.contains("192.168.1.5"); // true
+  ///   std::cout << p1.network();             // "192.168.1.0"
+  ///
+  ///   prefix6_t p3 = "2001:db8::/32";
+  ///   prefix_t<v4> p4 = "10.0.0.0/8";       // generic form
+  /// @endcode
+  template <ip_type_e Ip_type>
+  struct ip_prefix_t {
+
+    static const uint8_t max_length = (uint8_t)(Ip_type * 8); ///< Maximum prefix length in bits (32 for IPv4, 128 for IPv6)
+
+    uint8_t      length = 0;  ///< Prefix length in bits (0..max_length)
+    ip_t<Ip_type> ip    = {}; ///< Prefix value (network address, host bits should be zero)
+
+    // ===== constructors =====
+
+    ip_prefix_t () = default;
+
+    /// @brief Constructs a host prefix from an IP address (length = max: /32 or /128).
+    /// @param ip_ - IP address to use as a full host prefix.
+    ip_prefix_t (const ip_t<Ip_type>& ip_)
+      : length (max_length), ip (ip_) {}
+
+    /// @brief Constructs a prefix from an IP address and prefix length.
+    /// @param ip_     - IP address (host bits beyond length_ are masked off).
+    /// @param length_ - Prefix length in bits.
+    /// @details The IP address is automatically masked to the given prefix length,
+    ///   so ip_prefix_t(ip4_t("192.168.1.100"), 24) produces "192.168.1.0/24".
+    ip_prefix_t (const ip_t<Ip_type>& ip_, uint8_t length_)
+      : length (length_) {
+      assert (length_ <= max_length);
+      ip = ip_;
+      apply_mask ();
+    }
+
+    /// @brief Constructs a prefix from a raw binary prefix overlay.
+    /// @param prefix_raw - Raw prefix (length + bytes).
+    ip_prefix_t (const ip_prefix_raw_t& prefix_raw)
+      : length (prefix_raw.length) {
+      assert (length <= max_length);
+      uint8_t bytes_to_copy = prefix_raw.value_size ();
+      if (bytes_to_copy > Ip_type) bytes_to_copy = Ip_type;
+      std::copy_n (prefix_raw.bytes, bytes_to_copy, ip.begin ());
+    }
+
+    /// @brief Constructs a prefix from a CIDR notation string.
+    /// @param value - String in CIDR notation (e.g. "192.168.1.0/24" or "2001:db8::/32").
+    /// @details Supported formats:
+    ///   - IPv4: "192.168.1.0/24", "10.0.0.0/8"
+    ///   - IPv6: "2001:db8::/32", "fe80::/10"
+    ///   - Without prefix length: "192.168.1.1" is treated as /32, "::1" as /128
+    ip_prefix_t (const char* value) {
+      from_str (value);
+    }
+
+    /// @brief Constructs a prefix from a CIDR notation string.
+    ip_prefix_t (const std::string& value) {
+      from_str (value.data (), value.size ());
+    }
+
+    // ===== parsing =====
+
+    /// @brief Parses a CIDR notation string into this prefix.
+    /// @param value   - Pointer to the string.
+    /// @param str_len - Length of the string (default: large enough for any address).
+    /// @param success - Optional output flag for parsing success.
+    /// @return Reference to this object.
+    /// @details Format: "ip_address/prefix_length" or just "ip_address" (assumes max length).
+    ///   On parse failure, the prefix is reset to 0/0 (empty).
+    ip_prefix_t& from_str (const char* value, size_t str_len = 50, bool* success = nullptr) {
+      // find '/' separator
+      const char* ptr         = value;
+      size_t      remaining   = str_len;
+      size_t      ip_len      = 0;
+      bool        found_slash = false;
+
+      while (remaining-- && *ptr != '\0') {
+        if (*ptr == '/') {
+          ip_len      = (size_t)(ptr - value);
+          found_slash = true;
+          ptr++;
+          break;
+        }
+        ptr++;
+      }
+
+      if (!found_slash) {
+        // no slash — treat as host prefix
+        bool ip_ok = false;
+        ip.from_str (value, str_len, &ip_ok);
+        if (ip_ok) {
+          length = max_length;
+          if (success) *success = true;
+        }
+        else {
+          *this = {};
+          if (success) *success = false;
+        }
+        return *this;
+      }
+
+      // parse IP part
+      bool ip_ok = false;
+      ip.from_str (value, ip_len, &ip_ok);
+
+      if (!ip_ok) {
+        *this = {};
+        if (success) *success = false;
+        return *this;
+      }
+
+      // parse prefix length
+      uint32_t accum = 0;
+      bool     has_digits = false;
+      while (*ptr != '\0' && remaining-- > 0) {
+        if ('0' <= *ptr && *ptr <= '9') {
+          accum = accum * 10 + (uint32_t)(*ptr - '0');
+          has_digits = true;
+        }
+        else
+          break;
+        ptr++;
+      }
+
+      if (!has_digits || accum > max_length) {
+        *this = {};
+        if (success) *success = false;
+        return *this;
+      }
+
+      length = (uint8_t)accum;
+      apply_mask ();
+
+      if (success) *success = true;
+      return *this;
+    }
+
+    /// @brief Parses a CIDR notation string into this prefix.
+    ip_prefix_t& from_str (const std::string& value, bool* success = nullptr) {
+      return from_str (value.data (), value.size (), success);
+    }
+
+    // ===== conversion =====
+
+    /// @brief Converts the prefix to CIDR notation string (e.g. "192.168.1.0/24").
+    std::string to_str () const {
+      return ip.to_str () + '/' + std::to_string (length);
+    }
+
+    operator std::string () const {
+      return to_str ();
+    }
+
+    /// @brief Converts to raw binary prefix overlay.
+    /// @warning The returned reference points to the memory of this object.
+    ///   It is valid as long as this object exists and its layout matches ip_prefix_raw_t.
+    operator const ip_prefix_raw_t& () const {
+      return *reinterpret_cast<const ip_prefix_raw_t*>(this);
+    }
+
+    // ===== bit-level operations =====
+
+    /// @brief Sets the value of a specific bit in the prefix (MSB-first within each byte).
+    /// @param index - Bit index (0-based, must be < length).
+    /// @param value - Bit value to set (true = 1, false = 0).
+    void set_bit (uint8_t index, bool value) {
+      assert (index < length);
+      uint8_t byte_index = index >> 3;
+      uint8_t bit_index  = index & 0x7;
+      uint8_t bit_mask   = (uint8_t)(0x80 >> bit_index);
+      if (value) ip[byte_index] |=  bit_mask;
+      else       ip[byte_index] &= ~bit_mask;
+    }
+
+    /// @brief Returns the value of a specific bit in the prefix (MSB-first within each byte).
+    /// @param index - Bit index (0-based, must be < length).
+    bool get_bit (uint8_t index) const {
+      assert (index < length);
+      uint8_t byte_index = index >> 3;
+      uint8_t bit_index  = index & 0x7;
+      return (ip[byte_index] >> (7 - bit_index)) & 0x1;
+    }
+
+    /// @brief Appends a single bit to the end of the prefix, incrementing length by 1.
+    /// @param bit - Bit value (0 or 1).
+    /// @return Reference to this object.
+    ip_prefix_t& push_back_bit (uint8_t bit) {
+      assert (length < max_length);
+      uint8_t byte_index = length >> 3;
+      uint8_t bit_index  = length & 0x7;
+      uint8_t bit_mask   = (uint8_t)(0x80 >> bit_index);
+      length++;
+      if ( bit ) ip[byte_index] |=  bit_mask;
+      else       ip[byte_index] &= ~bit_mask;
+      return *this;
+    }
+
+    /// @brief Returns a new prefix with one bit appended.
+    /// @param bit - Bit value (0 or 1).
+    ip_prefix_t operator<< (uint8_t bit) const {
+      ip_prefix_t result = *this;
+      result.push_back_bit (bit);
+      return result;
+    }
+
+    // ===== network operations =====
+
+    /// @brief Returns the network address (IP with host bits zeroed out).
+    ip_t<Ip_type> network () const {
+      ip_t<Ip_type> result = ip;
+      mask_ip (result, length);
+      return result;
+    }
+
+    /// @brief Checks whether a given IP address belongs to this prefix.
+    /// @param other_ip - IP address to check.
+    /// @return true if other_ip falls within this prefix.
+    bool contains (const ip_t<Ip_type>& other_ip) const {
+      ip_t<Ip_type> masked      = other_ip;
+      ip_t<Ip_type> self_masked = ip;
+      mask_ip (self_masked, length);
+      mask_ip (masked,      length);
+      return masked == self_masked;
+    }
+
+    /// @brief Checks whether another prefix is entirely contained within this prefix.
+    /// @param other - Prefix to check.
+    /// @return true if other is a sub-prefix of this one (same network, equal or longer length).
+    bool contains (const ip_prefix_t& other) const {
+      if (other.length < length)
+        return false;
+      return contains (other.ip);
+    }
+
+    // ===== comparison =====
+
+    bool operator== (const ip_prefix_t& other) const {
+      return length == other.length && ip == other.ip;
+    }
+
+    bool operator!= (const ip_prefix_t& other) const {
+      return !(*this == other);
+    }
+
+    bool operator< (const ip_prefix_t& other) const {
+      if (length != other.length) return length < other.length;
+      return ip < other.ip;
+    }
+
+    /// @brief Returns true if the prefix is non-empty (length > 0).
+    explicit operator bool () const {
+      return length > 0;
+    }
+
+  private:
+
+    /// @brief Applies the prefix mask to the stored IP, zeroing out host bits.
+    void apply_mask () {
+      mask_ip (ip, length);
+    }
+
+    /// @brief Zeros out all bits in 'target' beyond position 'prefix_len'.
+    static void mask_ip (ip_t<Ip_type>& target, uint8_t prefix_len) {
+      uint8_t full_bytes     = prefix_len >> 3;
+      uint8_t remaining_bits = prefix_len & 0x7;
+
+      // partial byte: keep only the top 'remaining_bits' bits
+      if (full_bytes < Ip_type) {
+        if (remaining_bits > 0) {
+          uint8_t mask = (uint8_t)(0xFF << (8 - remaining_bits));
+          target[full_bytes] &= mask;
+          full_bytes++;
+        }
+        // zero out all subsequent bytes
+        for (uint8_t i = full_bytes; i < Ip_type; i++)
+          target[i] = 0;
+      }
+    }
+
+  };
+
+  // ===== direct type aliases =====
+
+  using prefix4_t = ip_prefix_t<v4>;  ///< IPv4 prefix (e.g. 192.168.1.0/24)
+  using prefix6_t = ip_prefix_t<v6>;  ///< IPv6 prefix (e.g. 2001:db8::/32)
+
+  // ===== generic type alias (template-friendly) =====
+
+  template <ip_type_e type>
+  using prefix_t = ip_prefix_t<type>;
+
+  // ===== stream output =====
+
+  template <ip_type_e Ip_type>
+  static inline std::ostream& operator<< (std::ostream& os, const ip_prefix_t<Ip_type>& prefix) {
+    os << prefix.to_str ();
+    return os;
+  }
+
 } // namespace ipsockets
 
-
+template <ipsockets::ip_type_e Ip_type>
+struct std::hash<ipsockets::ip_prefix_t<Ip_type>> {
+  std::size_t operator() (const ipsockets::ip_prefix_t<Ip_type>& prefix) const noexcept {
+    std::size_t h = std::hash<uint8_t> {}(prefix.length);
+    for (uint8_t i = 0; i < Ip_type; i++)
+      h ^= std::hash<uint8_t> {}(prefix.ip[i]) + 0x9e3779b9 + (h << 6) + (h >> 2);
+    return h;
+  }
+};
 
 
 // here is a lot of theory about IPv6 addresses

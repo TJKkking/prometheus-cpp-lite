@@ -79,6 +79,12 @@ namespace prometheus {
     // --- SimpleAPI: easy to use from the user's side, non-trivial internally.
     // --- Reference constructors (benchmark_t<value_type&>) ----------------------
 
+    /// @brief Default-constructs an unbound reference counter.
+    ///        Must be reassigned via operator= before meaningful use.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    benchmark_t()
+      : Metric(), elapsed_seconds(null_atomic<value_type>()) {}
+
     /// @brief Constructs a reference benchmark that binds to an existing owning benchmark.
     /// @param other Owning benchmark whose atomic elapsed_seconds and labels are referenced.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
@@ -110,9 +116,9 @@ namespace prometheus {
     /// @param help     Help/description string.
     /// @param labels   Constant base labels for the family.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    benchmark_t(Registry& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
+    benchmark_t(Registry& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
       // registry::Add() -> Family::Add<benchmark_t<value_type>>() -> benchmark_t<value_type>& -> benchmark_t<value_type&>
-      : benchmark_t(registry.Add(name, help, labels).Add<benchmark_t<value_type> >({})) {}
+      : benchmark_t(registry.Add(name, help).Add<benchmark_t<value_type> >(labels)) {}
 
     /// @brief Constructs a reference benchmark, creating both family and metric in the given registry.
     /// @param registry Shared pointer to Registry to register the family in.
@@ -120,9 +126,9 @@ namespace prometheus {
     /// @param help     Help/description string.
     /// @param labels   Constant base labels for the family.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    benchmark_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
+    benchmark_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
       // registry::Add() -> Family::Add<benchmark_t<value_type>>() -> benchmark_t<value_type>& -> benchmark_t<value_type&>
-      : benchmark_t(registry->Add(name, help, labels).Add<benchmark_t<value_type> >({})) {}
+      : benchmark_t(registry->Add(name, help).Add<benchmark_t<value_type> >(labels)) {}
 
     /// @brief Constructs a reference benchmark using the global registry.
     /// @param name   Metric family name.
@@ -131,7 +137,15 @@ namespace prometheus {
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     benchmark_t(const std::string& name, const std::string& help, const labels_t& labels = {})
       // global_registry::Add() -> Family::Add<benchmark_t<value_type>>() -> benchmark_t<value_type>& -> benchmark_t<value_type&>
-      : benchmark_t(global_registry.Add(name, help, labels).Add<benchmark_t<value_type>>({})) {}
+      : benchmark_t(global_registry.Add(name, help).Add<benchmark_t<value_type>>(labels)) {}
+
+    /// @brief Constructs a reference benchmark using the global registry.
+    /// @param name   Metric family name.
+    /// @param labels Constant base labels for the family.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    benchmark_t(const std::string& name, const labels_t& labels = {})
+      // global_registry::Add() -> Family::Add<benchmark_t<value_type>>() -> benchmark_t<value_type>& -> benchmark_t<value_type&>
+      : benchmark_t(global_registry.Add(name).Add<benchmark_t<value_type>>(labels)) {}
 
     // --- Conversion: owning → reference -----------------------------------------
 
@@ -151,6 +165,38 @@ namespace prometheus {
     /// @brief Owning benchmarks are non-copy-assignable.
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
     benchmark_t& operator=(const benchmark_t&) = delete;
+
+    // --- Reference form: copy/move constructible ---------------------------------
+
+    /// @brief Reference benchmarks are copy-constructible (rebinds to the same atomic).
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    benchmark_t(const benchmark_t& other)
+      : Metric(other.labels_ptr), elapsed_seconds(other.elapsed_seconds), snapshot_value(other.snapshot_value) {}
+
+    /// @brief Reference benchmarks are move-constructible.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    benchmark_t(benchmark_t&& other)
+      : Metric(other.labels_ptr), elapsed_seconds(other.elapsed_seconds), snapshot_value(other.snapshot_value) {}
+
+    /// @brief Reference benchmarks support copy-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    benchmark_t& operator=(const benchmark_t& other) {
+      if (this != &other) {
+        this->~benchmark_t();
+        new (this) benchmark_t(other);
+      }
+      return *this;
+    }
+
+    /// @brief Reference benchmarks support move-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    benchmark_t& operator=(benchmark_t&& other) {
+      if (this != &other) {
+        this->~benchmark_t();
+        new (this) benchmark_t(std::move(other));
+      }
+      return *this;
+    }
 
     // --- Public API (shared by both owning and reference forms) -----------------
 
@@ -198,6 +244,10 @@ namespace prometheus {
     /// @return Atomically loaded elapsed seconds.
     value_type Get() const { return elapsed_seconds.load(); }
 
+    /// @brief Returns the total elapsed time accumulated so far (in seconds).
+    /// @return Atomically loaded elapsed seconds.
+    value_type value() const { return elapsed_seconds.load(); }
+
     // --- Metric interface overrides ---------------------------------------------
 
     /// @brief Returns the Prometheus type name for this metric.
@@ -216,8 +266,7 @@ namespace prometheus {
     /// @param out         Output stream.
     /// @param family_name Metric family name (line prefix).
     /// @param base_labels Constant labels from the owning family.
-    void serialize(std::ostream& out, const std::string& family_name,
-                   const labels_t& base_labels) const override {
+    void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const override {
       TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), snapshot_value);
     }
   };

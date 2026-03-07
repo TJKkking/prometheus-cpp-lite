@@ -1,3 +1,18 @@
+/*
+* prometheus-cpp-lite — header-only C++ library for exposing Prometheus metrics
+* https://github.com/biaks/prometheus-cpp-lite
+*
+* Copyright (c) 2026 Yan Kryukov ianiskr@gmail.com
+* Licensed under the MIT License
+*
+* =============================================================================
+* quick_start.cpp — Quick start example
+*
+* Demonstrates all metric types (counter, gauge, histogram, summary, benchmark)
+* exposed via HTTP pull server at http://localhost:9100/metrics.
+* This is the code from the "All metric types at a glance" section in README.
+*
+*/
 
 #include <prometheus/prometheus.h>
 

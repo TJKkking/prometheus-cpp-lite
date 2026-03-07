@@ -1,6 +1,9 @@
-# ip-sockets-cpp-lite 🔌
+
+# [ip-sockets-cpp-lite](https://github.com/biaks/ip-sockets-cpp-lite) 🔌
 
 [![Build examples](https://github.com/biaks/ip-sockets-cpp-lite/actions/workflows/cmake.yml/badge.svg)](https://github.com/biaks/ip-sockets-cpp-lite/actions/workflows/cmake.yml)
+[![Build multi-platform](https://github.com/biaks/ip-sockets-cpp-lite/actions/workflows/cmake-multi-platform.yml/badge.svg)](https://github.com/biaks/ip-sockets-cpp-lite/actions/workflows/cmake-multi-platform.yml)
+
 
 **Simple. Lightweight. Cross-platform.**
 
@@ -12,13 +15,13 @@ No more endless `getaddrinfo` calls, confusing `sockaddr_in` / `sockaddr_in6` st
 
 ## ✨ Why ip-sockets-cpp-lite?
 
-* 📦 **Header-only** — just copy headers into your project
-* 🎯 **Zero dependencies** — only the C++ standard library
-* 🖥️ **Cross-platform** — Linux, Windows, macOS
-* 🚀 **Minimal learning curve** — up and running in minutes
-* 🪶 **Lightweight** — no hidden magic
-* 🔒 **Predictable behavior** — explicit control over sockets
-* 📋 **Readable errors** — clear error codes instead of errno confusion
+* 📦 **Header-only**            - just copy headers into your project
+* 🎯 **Zero dependencies**      - only the C++ standard library
+* 🖥️ **Cross-platform**         - Linux, Windows, macOS
+* 🚀 **Minimal learning curve** - up and running in minutes
+* 🪶 **Lightweight**              - no hidden magic
+* 🔒 **Predictable behavior**   - explicit control over sockets
+* 📋 **Readable errors**        - clear error codes instead of errno confusion
 
 ---
 
@@ -82,12 +85,14 @@ Keep it simple. Keep it portable.
 * Blocking I/O with timeouts
 * Configurable logging
 * Clear states and error codes
+* **RAW mode** — send hand-crafted IP packets with custom headers (IP_HDRINCL)
 
 ### 🔌 TCP Sockets (`tcp_socket.h`)
 
 * Simple accept workflow
 * Automatic connection lifecycle
 * API consistent with UDP sockets
+* **`std::iostream` interface** — use `<<`, `>>`, `std::getline` over TCP
 
 ---
 
@@ -107,9 +112,9 @@ Keep it simple. Keep it portable.
 
 from /include folder copy:
 
-* `ip_address.h`
-* `udp_socket.h`
-* `tcp_socket.h`
+* [`ip_address.h`](include/ip_address.h)
+* [`udp_socket.h`](include/udp_socket.h)
+* [`tcp_socket.h`](include/tcp_socket.h)
 
 **Option 2 — Use CMake**
 
@@ -123,7 +128,7 @@ Then include what you need:
 ```cpp
 #include "ip_address.h"  // work only with ipv4/ipv6 addresses
 #include "udp_socket.h"  // work with UDP ipv4/ipv6 client/server sockets
-#include "tcp_socket.h"  // work with TCP ipv4/ipv6 client/server sockets
+#include "tcp_socket.h"  // work with TCP ipv4/ipv6 client/server sockets + tcp_stream_t
 ```
 
 ### 🌐 Working with IP Addresses
@@ -211,7 +216,7 @@ udp_socket_t<v4, socket_type_e::server> server;
 
 if (server.open("0.0.0.0:8080") == no_error) {
 
-    char buffer[1024];
+    char    buffer[1024];
     addr4_t client;
 
     while (true) {
@@ -254,14 +259,93 @@ if (server.open("0.0.0.0:8080") == no_error) {
 }
 ```
 
-### 📚 More Examples
-Check out the `examples/` directory for complete working examples:
-* `ip_address.cpp` - all IP address manipulation features
-* `udp_socket.cpp` - UDP client-server interaction
-* `tcp_socket.cpp` - TCP client-server interaction
-* `resolve_host.cpp` - resolving host to ipv4/ipv6 address example
-* `http_server.cpp` - compact multi-page HTTP server
+### 🔌 TCP Stream — iostream over TCP
 
+`tcp_stream_t` wraps a TCP socket into a standard `std::iostream`, so you can use `<<`, `>>`, `std::getline` and all familiar C++ stream operations directly over a network connection.
+
+#### Client: send and receive with `<<` and `>>`
+```cpp
+tcp_socket_t<v4, socket_type_e::client> sock;
+sock.open("192.168.1.100:8080");
+
+// Wrap opened socket into a stream
+tcp_stream_t<v4, socket_type_e::client> stream (std::move(sock));
+
+// Send data — just like std::cout
+stream << "Hello " << 42 << std::endl;
+
+// Read response — just like std::cin
+std::string line;
+std::getline(stream, line);
+std::cout << "Server replied: " << line << '\n';
+```
+
+#### Server: accept and communicate via streams
+```cpp
+tcp_socket_t<v4, socket_type_e::server> server;
+server.open("0.0.0.0:8080");
+
+addr4_t client_addr;
+auto accepted = server.accept(client_addr);
+
+// Wrap accepted connection into a stream
+tcp_stream_t<v4, socket_type_e::client> stream (std::move(accepted));
+
+// Read a command with parameters
+std::string cmd;
+double a, b;
+stream >> cmd >> a >> b;  // e.g. "ADD 10.5 20.3"
+
+// Send result back
+stream << "RESULT " << (a + b) << std::endl;
+```
+
+#### Why is this useful?
+
+* No manual `send()`/`recv()` buffer management
+* Works with any code that accepts `std::istream` or `std::ostream`
+* Buffered I/O — fewer system calls, better performance
+* Familiar API — no new abstractions to learn
+
+See [`examples/tcp_stream.cpp`](examples/tcp_stream.cpp) for complete working examples including a line-by-line echo server and a stream-based calculator.
+
+### 🔧 RAW Socket — send packets with custom IP headers
+
+RAW sockets allow you to build the entire IP packet manually (IP header + any protocol payload)
+with full control over every header field — including the source IP address
+(useful for traffic forwarding, spoofing, or implementing custom protocols).
+
+```cpp
+// Create a RAW socket (requires administrator/root privileges)
+udp_socket_t<v4, socket_type_e::client> sock (log_e::debug, udp_type_e::raw);
+sock.open("127.0.0.1:9000");
+
+// Build IP + UDP + payload manually, then send
+char packet[1500];
+int  len = build_raw_packet(packet, sizeof(packet), src_addr, dst_addr, "Hello", 6);
+sock.sendto(packet, len, dst_addr);
+```
+
+The log shows `raw<...>` prefix so you can distinguish RAW from regular UDP sockets:
+```
+raw<ip4,client>: [3].open()   [undefined <> 127.0.0.1:9000] success, socket in RAW mode
+raw<ip4,client>: [3].sendto() [127.0.0.1:8000 -> 127.0.0.1:9000] sended 34 bytes
+```
+
+> **Note:** RAW sockets require administrator privileges on Windows or root/CAP_NET_RAW on Linux.
+> Only `sendto()` and `recvfrom()` are available in RAW mode; `send()` and `recv()` are blocked.
+
+See [`examples/raw_socket.cpp`](examples/raw_socket.cpp) for a working send example.
+
+### 📚 More Examples
+Check out the [`examples/`](examples) directory for complete working examples:
+* [`ip_address.cpp`](examples/ip_address.cpp)     - all IP address manipulation features
+* [`udp_socket.cpp`](examples/udp_socket.cpp)     - UDP client-server interaction
+* [`tcp_socket.cpp`](examples/tcp_socket.cpp)     - TCP client-server interaction
+* [`tcp_stream.cpp`](examples/tcp_stream.cpp)     - TCP iostream interface (<<, >>, getline over network)
+* [`raw_socket.cpp`](examples/raw_socket.cpp)     - RAW socket: sending packets with custom IP headers
+* [`resolve_host.cpp`](examples/resolve_host.cpp) - resolving host to ipv4/ipv6 address example
+* [`http_server.cpp`](examples/http_server.cpp)   - compact multi-page HTTP server
 ---
 
 ## 🤔 Why is this convenient?
@@ -321,4 +405,4 @@ Issues, ideas, and pull requests are welcome!
 
 ---
 
-**ip-sockets-cpp-lite — sockets that don’t scare you.**
+**ip-sockets-cpp-lite — sockets that don't scare you.**

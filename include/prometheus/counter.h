@@ -39,7 +39,7 @@ namespace prometheus {
     using Family       = CustomFamily<counter_t<value_type> >; ///< Legacy alias for backward compatibility.
 
   private:
-    storage_type value;
+    storage_type val;
     value_type   snapshot_value { 0 };
 
     friend counter_t<value_type&>; ///< Grant access to internals so the reference form can bind to the owning form.
@@ -52,17 +52,23 @@ namespace prometheus {
     /// @param labels Per-metric dimensional labels (copied and owned).
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
     explicit counter_t(const labels_t& labels)
-      : Metric(labels), value(0) {}
+      : Metric(labels), val(0) {}
 
     // --- SimpleAPI: easy to use from the user's side, non-trivial internally.
     // --- Reference constructors (counter_t<value_type&>) ------------------------
+
+    /// @brief Default-constructs an unbound reference counter.
+    ///        Must be reassigned via operator= before meaningful use.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    counter_t()
+      : Metric(), val(null_atomic<value_type>()), snapshot_value(0) {}
 
     /// @brief Constructs a reference counter that binds to an existing owning counter.
     /// @param other Owning counter whose atomic value and labels are referenced.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     counter_t(counter_t<value_type>& other)
       // counter_t<value_type>& -> counter_t<value_type&>
-      : Metric(other.labels_ptr), value(other.value), snapshot_value(other.snapshot_value) {}
+      : Metric(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
 
     /// @brief Constructs a reference counter by adding an owning counter to the given family.
     /// The metric value type compatibility with the family is checked at runtime.
@@ -88,9 +94,9 @@ namespace prometheus {
     /// @param help     Help/description string.
     /// @param labels   Constant base labels for the family.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    counter_t(Registry& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
+    counter_t(Registry& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
       // registry::Add() -> Family::Add<counter_t<value_type>>() -> counter_t<value_type>& -> counter_t<value_type&>
-      : counter_t(registry.Add(name, help, labels).Add<counter_t<value_type> >({})) {}
+      : counter_t(registry.Add(name, help).Add<counter_t<value_type> >(labels)) {}
 
     /// @brief Constructs a reference counter, creating both family and metric in the given registry.
     /// @param registry Shared pointer to Registry to register the family in.
@@ -98,9 +104,9 @@ namespace prometheus {
     /// @param help     Help/description string.
     /// @param labels   Constant base labels for the family.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    counter_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
+    counter_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
       // registry::Add() -> Family::Add<counter_t<value_type>>() -> counter_t<value_type>& -> counter_t<value_type&>
-      : counter_t(registry->Add(name, help, labels).Add<counter_t<value_type> >({})) {}
+      : counter_t(registry->Add(name, help).Add<counter_t<value_type> >(labels)) {}
 
     /// @brief Constructs a reference counter using the global registry.
     /// @param name   Metric family name.
@@ -109,7 +115,15 @@ namespace prometheus {
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     counter_t(const std::string& name, const std::string& help, const labels_t& labels = {})
       // global_registry::Add() -> Family::Add<counter_t<value_type>>() -> counter_t<value_type>& -> counter_t<value_type&>
-      : counter_t(global_registry.Add(name, help, labels).Add<counter_t<value_type>>({})) {}
+      : counter_t(global_registry.Add(name, help).Add<counter_t<value_type> >(labels)) {}
+
+    /// @brief Constructs a reference counter using the global registry.
+    /// @param name   Metric family name.
+    /// @param labels Constant base labels for the family.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    counter_t(const std::string& name, const labels_t& labels = {})
+      // global_registry::Add() -> Family::Add<counter_t<value_type>>() -> counter_t<value_type>& -> counter_t<value_type&>
+      : counter_t(global_registry.Add(name).Add<counter_t<value_type> >(labels)) {}
 
     // --- Conversion: owning → reference -----------------------------------------
 
@@ -130,38 +144,74 @@ namespace prometheus {
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
     counter_t& operator=(const counter_t&) = delete;
 
+    // --- Reference form: copy/move constructible and assignable ------------------
+
+    /// @brief Reference counters are copy-constructible (rebinds to the same atomic).
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    counter_t(const counter_t& other)
+      : Metric(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
+
+    /// @brief Reference counters are move-constructible.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    counter_t(counter_t&& other)
+      : Metric(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
+
+    /// @brief Reference counters support copy-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    counter_t& operator=(const counter_t& other) {
+      if (this != &other) {
+        this->~counter_t();
+        new (this) counter_t(other);
+      }
+      return *this;
+    }
+
+    /// @brief Reference counters support move-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    counter_t& operator=(counter_t&& other) {
+      if (this != &other) {
+        this->~counter_t();
+        new (this) counter_t(std::move(other));
+      }
+      return *this;
+    }
+
     // --- Public API (shared by both owning and reference forms) -----------------
 
     /// @brief Increments the counter by one.
-    void Increment() { ++value; }
+    void Increment() { ++val; }
 
     /// @brief Increments the counter by the given non-negative value.
     ///
     /// In debug builds, throws if `val` is negative (for signed integral types).
     /// Zero and negative values are silently ignored in release builds.
     ///
-    /// @param val Amount to add (must be > 0).
-    /// @throws std::invalid_argument (debug only) if val is negative and integral.
-    void Increment(const value_type& val) {
+    /// @param value Amount to add (must be > 0).
+    /// @throws std::invalid_argument (debug only) if value is negative and integral.
+    void Increment(const value_type& value) {
       #ifndef NDEBUG
-      if (std::is_integral<value_type>::value && val < 0)
+      if (std::is_integral<value_type>::value && value < 0)
         throw std::invalid_argument("counter increment must be non-negative");
       #endif
-      if (val > 0)
-        value += val;
+      if (value > 0)
+        val += value;
     }
 
     /// @brief Returns the current counter value.
     /// @return Atomically loaded counter value.
-    value_type Get() const { return value.load(); }
+    value_type Get() const { return val.load(); }
+
+    /// @brief Returns the current counter value.
+    /// @return Atomically loaded counter value.
+    value_type value() const { return val.load(); }
 
     /// @brief Pre-increment operator (increments by one).
     /// @return Reference to this counter.
-    counter_t& operator++()                    { ++value;      return *this; }
+    counter_t& operator++()                    { ++val;      return *this; }
 
     /// @brief Post-increment operator (increments by one, returns reference — not previous value).
     /// @return Reference to this counter.
-    counter_t& operator++(int)                 { ++value;      return *this; }
+    counter_t& operator++(int)                 { ++val;      return *this; }
 
     /// @brief Compound addition operator.
     /// @param v Value to add.
@@ -175,14 +225,13 @@ namespace prometheus {
     const char* type_name() const override { return "counter"; }
 
     /// @brief Freezes the current value into a snapshot for consistent serialization.
-    void collect() override { snapshot_value = value.load(); }
+    void collect() override { snapshot_value = val.load(); }
 
     /// @brief Writes this counter's data line in the Prometheus text exposition format.
     /// @param out         Output stream.
     /// @param family_name Metric family name (line prefix).
     /// @param base_labels Constant labels from the owning family.
-    void serialize(std::ostream& out, const std::string& family_name,
-                   const labels_t& base_labels) const override {
+    void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const override {
       TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), snapshot_value);
     }
   };

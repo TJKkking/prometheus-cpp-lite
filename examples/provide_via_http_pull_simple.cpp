@@ -1,4 +1,3 @@
-
 /*
 * prometheus-cpp-lite — header-only C++ library for exposing Prometheus metrics
 * https://github.com/biaks/prometheus-cpp-lite
@@ -19,18 +18,21 @@
 
 using namespace prometheus;
 
-int main() {
+int main () {
 
   registry_t       registry;
   counter_metric_t metric  (registry, "metric1_name", "description1");
-  http_server_t    puller  (registry, "127.0.0.1:9100");
+  http_server_t    puller  (registry, "127.0.0.1:9100", "/metrics", log_e::info);
 
   // now our metrics always available at http://localhost:9100/metrics
 
+  std::cout << "HTTP pull server started on http://localhost:9100/metrics\n"
+            << "Use: curl http://localhost:9100/metrics or open in browser\n" << std::endl;
+
   for (;; ) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    const int random_value = std::rand();
-    metric += random_value % 10;
+    metric += std::rand() % 10;
+    std::cout << "  metric1_name = " << metric.Get() << std::endl;
   }
 
 }

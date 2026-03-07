@@ -86,8 +86,7 @@ void test_main_1() {
 void test_main_2() {
   std::cout << "\n=== test_main_2 - Shortest path with custom bucket boundaries ===\n";
 
-  histogram_metric_t metric2 ("response_size_bytes", "size of HTTP responses",
-                              {}, {100, 500, 1000, 5000, 10000});
+  histogram_metric_t metric2 ("response_size_bytes", "size of HTTP responses", {}, {100, 500, 1000, 5000, 10000});
 
   metric2.Observe(50);
   metric2.Observe(250);
@@ -113,8 +112,8 @@ void test_main_3() {
   std::cout << "\n=== test_main_3 - Explicit untyped family wrapper (global registry) ===\n";
 
   family_t           durations  ("http_duration_seconds", "HTTP request durations");
-  histogram_metric_t metric_get (durations, {{"method",  "GET"}}, BucketBoundaries{0.01, 0.05, 0.1, 0.5, 1.0});
-  histogram_metric_t metric_post(durations, {{"method", "POST"}}, BucketBoundaries{0.01, 0.05, 0.1, 0.5, 1.0});
+  histogram_metric_t metric_get (durations, {{"method",  "GET"}}, {0.01, 0.05, 0.1, 0.5, 1.0});
+  histogram_metric_t metric_post(durations, {{"method", "POST"}}, {0.01, 0.05, 0.1, 0.5, 1.0});
 
   metric_get.Observe(0.03);
   metric_get.Observe(0.12);
@@ -142,8 +141,8 @@ void test_main_4() {
   std::cout << "\n=== test_main_4 - Explicit typed family wrapper (global registry, compile-time safety) ===\n";
 
   histogram_family_t durations    ("grpc_duration_seconds", "gRPC request durations");
-  histogram_metric_t metric_unary (durations, {{"type",  "unary"}}, BucketBoundaries{0.01, 0.05, 0.1, 0.5, 1.0});
-  histogram_metric_t metric_stream(durations, {{"type", "stream"}}, BucketBoundaries{0.01, 0.05, 0.1, 0.5, 1.0});
+  histogram_metric_t metric_unary (durations, {{"type",  "unary"}}, {0.01, 0.05, 0.1, 0.5, 1.0});
+  histogram_metric_t metric_stream(durations, {{"type", "stream"}}, {0.01, 0.05, 0.1, 0.5, 1.0});
 
   metric_unary.Observe(0.02);
   metric_unary.Observe(0.15);
@@ -197,8 +196,8 @@ void test_main_6() {
   registry_t         registry;
   family_t           durations   (registry, "db_query_duration_seconds", "database query durations",
                                   {{"host", "localhost"}});
-  histogram_metric_t metric_read (durations, {{"operation",  "read"}}, BucketBoundaries{0.001, 0.01, 0.1, 1.0});
-  histogram_metric_t metric_write(durations, {{"operation", "write"}}, BucketBoundaries{0.001, 0.01, 0.1, 1.0});
+  histogram_metric_t metric_read (durations, {{"operation",  "read"}}, {0.001, 0.01, 0.1, 1.0});
+  histogram_metric_t metric_write(durations, {{"operation", "write"}}, {0.001, 0.01, 0.1, 1.0});
 
   metric_read.Observe(0.005);
   metric_read.Observe(0.03);
@@ -229,8 +228,8 @@ void test_main_7() {
   std::shared_ptr<registry_t>      registry = std::make_shared<registry_t>();
   histogram_family_t durations    (registry, "cache_latency_seconds", "cache operation latency",
                                    {{"host", "localhost"}});
-  histogram_metric_t metric_hit   (durations, {{"result",  "hit"}}, BucketBoundaries{0.0001, 0.001, 0.01, 0.1});
-  histogram_metric_t metric_miss  (durations, {{"result", "miss"}}, BucketBoundaries{0.0001, 0.001, 0.01, 0.1});
+  histogram_metric_t metric_hit   (durations, {{"result",  "hit"}}, {0.0001, 0.001, 0.01, 0.1});
+  histogram_metric_t metric_miss  (durations, {{"result", "miss"}}, {0.0001, 0.001, 0.01, 0.1});
 
   metric_hit.Observe(0.00005);
   metric_hit.Observe(0.0008);
@@ -393,6 +392,13 @@ void test_legacy_4() {
 
 #include <prometheus/simpleapi.h>
 
+// suppress deprecation warnings - legacy API is intentionally used here to verify backward compatibility
+#ifdef _MSC_VER
+#pragma warning(disable: 4996)  // deprecated declaration
+#elif defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
+
 // =============================================================================
 // test_legacy_5 - Legacy SimpleAPI: metric wrappers with global registry (shortest form)
 //
@@ -403,7 +409,7 @@ void test_legacy_4() {
 
 void test_legacy_5() {
   std::cout << "\n=== test_legacy_5 - Legacy SimpleAPI: metric wrappers with global registry (shortest form) ===\n";
-  global_registry = Registry();  // Clear global registry for a clean test.
+  global_registry.RemoveAll();  // Clear global registry for a clean test.
 
   simpleapi::histogram_metric_t metric1 { "request_duration", "request duration histogram" };
 
@@ -428,7 +434,7 @@ void test_legacy_5() {
 void test_legacy_6() {
   std::cout << "\n=== test_legacy_6 - Legacy SimpleAPI: family wrapper + metric wrappers ===\n";
 
-  global_registry = Registry();  // Clear global registry for a clean test.
+  global_registry.RemoveAll();  // Clear global registry for a clean test.
 
   simpleapi::histogram_family_t metric_family { "simple_histogram", "simple histogram family example" };
   simpleapi::histogram_metric_t metric1       { metric_family.Add({{"name", "hist1"}}, BucketBoundaries{0.1, 0.5, 1.0, 5.0}) };

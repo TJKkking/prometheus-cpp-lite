@@ -1,3 +1,17 @@
+/*
+* prometheus-cpp-lite — header-only C++ library for exposing Prometheus metrics
+* https://github.com/biaks/prometheus-cpp-lite
+*
+* Copyright (c) 2026 Yan Kryukov ianiskr@gmail.com
+* Licensed under the MIT License
+*
+* =============================================================================
+* provide_via_textfile.cpp — File export example
+*
+* Demonstrates shortest way to save metrics to a .prom file via file_saver_t,
+* suitable for node_exporter textfile collector
+*
+*/
 
 #include <prometheus/counter.h>
 #include <prometheus/file_saver.h>
