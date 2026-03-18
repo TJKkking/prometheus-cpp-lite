@@ -419,7 +419,7 @@ namespace prometheus {
       }
     }
 
-    ~Family() = default;
+    virtual ~Family() = default;
 
     Family(const Family&) = delete;
     Family& operator=(const Family&) = delete;
@@ -503,7 +503,7 @@ namespace prometheus {
     /// the HELP / TYPE header lines followed by each metric's data lines.
     ///
     /// @param out Output stream to write to.
-    void serialize(std::ostream& out) {
+    virtual void serialize(std::ostream& out) {
       std::lock_guard<std::mutex> lock(mutex);
 
       if (metrics.empty()) return;
@@ -591,6 +591,7 @@ namespace prometheus {
   public:
 
     Registry() = default;
+    virtual ~Registry() = default;
     Registry(Registry&& other) : families(std::move(other.families)) {};
 
     Registry& operator=(Registry&& other) {
@@ -663,7 +664,7 @@ namespace prometheus {
 
     /// @brief Serializes all registered families to the given output stream.
     /// @param out Output stream.
-    void serialize(std::ostream& out) {
+    virtual void serialize(std::ostream& out) {
       std::lock_guard<std::mutex> lock(mutex);
 
       // Switch to the classic locale for locale-independent number formatting.
