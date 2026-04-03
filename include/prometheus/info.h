@@ -38,6 +38,11 @@ namespace prometheus {
       : Metric(labels), value(1) {}
 
     // --- Reference constructors ---
+
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    info_t()
+      : Metric(), value(null_atomic<value_type>()) {}
+
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     info_t(info_t<value_type>& other)
       : Metric(other.labels_ptr), value(other.value) {}
@@ -51,22 +56,55 @@ namespace prometheus {
       : info_t(family.Add(labels)) {}
 
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    info_t(Registry& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
-      : info_t(registry.Add(name, help, labels).Add<info_t<value_type> >({})) {}
+    info_t(Registry& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
+      : info_t(registry.Add(name, help).Add<info_t<value_type>>(labels)) {}
 
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    info_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help, const labels_t& labels = {})
-      : info_t(registry->Add(name, help, labels).Add<info_t<value_type> >({})) {}
-
+    info_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {})
+      : info_t(registry->Add(name, help).Add<info_t<value_type>>(labels)) {}
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    info_t(const std::string& name, const std::string& help, const labels_t& labels = {})
-      : info_t(global_registry.Add(name, help, labels).Add<info_t<value_type>>({})) {}
+    info_t(const std::string& name, const std::string& help = {}, const labels_t& labels = {})
+      : info_t(global_registry.Add(name, help).Add<info_t<value_type>>(labels)) {}
 
     // Non-copyable (owning form)
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
     info_t(const info_t&) = delete;
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
     info_t& operator=(const info_t&) = delete;
+
+    // --- Reference form: copy/move constructible ---------------------------------
+
+    /// @brief Reference info metrics are copy-constructible (rebinds to the same atomic).
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    info_t(const info_t& other)
+      : Metric(other.labels_ptr), value(other.value) {}
+
+    /// @brief Reference info metrics are move-constructible.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    info_t(info_t&& other)
+      : Metric(other.labels_ptr), value(other.value) {}
+
+    /// @brief Reference info metrics support copy-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    info_t& operator=(const info_t& other) {
+      if (this != &other) {
+        this->~info_t();
+        new (this) info_t(other);
+      }
+      return *this;
+    }
+
+    /// @brief Reference info metrics support move-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    info_t& operator=(info_t&& other) {
+      if (this != &other) {
+        this->~info_t();
+        new (this) info_t(std::move(other));
+      }
+      return *this;
+    }
+
+    // --- Public API -------------------------------------------------------------
 
     /// @brief Always returns 1.
     value_type Get() const { return value.load(); }

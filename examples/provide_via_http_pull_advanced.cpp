@@ -39,35 +39,34 @@ using namespace prometheus;
 //   curl http://localhost:9100/metrics
 // =============================================================================
 
-void example_simple() {
-  std::cout << "\n=== Example 1: Simple mode — single registry at /metrics ===\n";
-  std::cout << "  Listening on http://localhost:9100/metrics for 10 seconds...\n\n";
+void example_simple () {
+  std::cout   << "\n=== Example 1: Simple mode — single registry at /metrics ===\n";
+  std::cout   << "  Listening on http://localhost:9100/metrics for 10 seconds...\n\n";
 
   // 1. Create a shared registry.
-  std::shared_ptr<registry_t> registry = std::make_shared<registry_t>();
+  auto             registry = std::make_shared<registry_t>();
 
   // 2. Create metrics inside it.
   counter_metric_t requests (registry, "http_requests_total", "Total HTTP requests");
   gauge_metric_t   active   (registry, "active_connections",  "Currently open connections");
 
   // 3. Start the HTTP server — metrics are now available at http://localhost:9100/metrics
-  http_server_t server({{127,0,0,1}, 9100}, registry);
+  http_server_t    server   ({{127,0,0,1}, 9100}, registry, "/metrics", log_e::info);
 
   // Simulate application work.
   for (int i = 0; i < 10; ++i) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    int rnd = std::rand() % 10;
-    requests += rnd;
-    active.Set(5 + std::rand() % 20);
+    requests += std::rand() % 10;
+    active    = 5 + std::rand() % 20;
 
     std::cout << "  [simple] tick " << (i + 1) << "/10"
-      << "  requests=" << requests.Get()
-      << "  active="   <<   active.Get() << std::endl;
+              << "  requests="      << requests.Get()
+              << "  active="        <<   active.Get() << std::endl;
   }
 
   // Server stops automatically when it goes out of scope.
-  std::cout << "  Stopped.\n";
+  std::cout   << "  Stopped.\n";
 }
 
 // =============================================================================
@@ -80,55 +79,55 @@ void example_simple() {
 //   curl http://localhost:9200/metrics/sys
 // =============================================================================
 
-void example_multipath() {
-  std::cout << "\n=== Example 2: Multi-path mode — multiple registries at different paths ===\n"
-    << "  Listening on http://localhost:9200 for 10 seconds...\n"
-    << "    /metrics/app  — application metrics\n"
-    << "    /metrics/sys  — system metrics\n\n";
+void example_multipath () {
+  std::cout   << "\n=== Example 2: Multi-path mode — multiple registries at different paths ===\n"
+              << "  Listening on http://localhost:9200 for 10 seconds...\n"
+              << "    /metrics/app  — application metrics\n"
+              << "    /metrics/sys  — system metrics\n\n";
 
   // 1. Create separate registries for different metric domains.
-  std::shared_ptr<registry_t> app_registry = std::make_shared<registry_t>();
-  std::shared_ptr<registry_t> sys_registry = std::make_shared<registry_t>();
+  auto             app_registry = std::make_shared<registry_t>();
+  auto             sys_registry = std::make_shared<registry_t>();
 
   // 2. Populate each registry with its own metrics.
-  counter_metric_t orders_total   (app_registry, "orders_total",   "Total orders processed");
-  gauge_metric_t   queue_size     (app_registry, "queue_size",     "Current queue depth");
+  counter_metric_t orders_total   (app_registry, "orders_total",      "Total orders processed");
+  gauge_metric_t   queue_size     (app_registry, "queue_size",        "Current queue depth");
 
   gauge_metric_t   cpu_usage      (sys_registry, "cpu_usage_percent", "CPU usage percentage");
   gauge_metric_t   memory_used_mb (sys_registry, "memory_used_mb",    "Memory usage in MB");
 
   // 3. Create the server and register each registry under its own path.
   http_server_t server;
-  server.add_endpoint(app_registry, "/metrics/app");
-  server.add_endpoint(sys_registry, "/metrics/sys");
-  server.start({{127,0,0,1}, 9200});
+  server.add_endpoint (app_registry, "/metrics/app");
+  server.add_endpoint (sys_registry, "/metrics/sys");
+  server.start ({{127,0,0,1}, 9200}, log_e::info);
 
   // Simulate application work.
   for (int i = 0; i < 10; ++i) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
-    orders_total += 1 + std::rand() % 5;
-    queue_size.Set(std::rand() % 50);
+    orders_total  += 1 + std::rand() % 5;
+    queue_size     = std::rand() % 50;
 
-    cpu_usage.Set(10 + std::rand() % 80);
-    memory_used_mb.Set(200 + std::rand() % 300);
+    cpu_usage      =  10 + std::rand() % 80;
+    memory_used_mb = 200 + std::rand() % 300;
 
     std::cout << "  [multi]  tick " << (i + 1) << "/10"
-      << "  orders="  << orders_total.Get()
-      << "  queue="   << queue_size.Get()
-      << "  cpu="     << cpu_usage.Get() << "%"
-      << "  mem="     << memory_used_mb.Get() << "MB" << std::endl;
+              << "  orders="        << orders_total.Get()
+              << "  queue="         << queue_size.Get()
+              << "  cpu="           << cpu_usage.Get() << "%"
+              << "  mem="           << memory_used_mb.Get() << "MB" << std::endl;
   }
 
   // Server stops automatically when it goes out of scope.
-  std::cout << "  Stopped.\n";
+  std::cout   << "  Stopped.\n";
 }
 
 // =============================================================================
 // main
 // =============================================================================
 
-int main() {
+int main () {
   std::cout << "=== HTTP Pull endpoint examples ===\n";
   std::cout << "Use curl or a browser to fetch metrics while the examples run.\n";
 

@@ -25,8 +25,7 @@
 
 namespace prometheus {
 
-  using namespace std::chrono_literals;
-  using namespace ipsockets;
+  using ipsockets::log_e;
 
   /// @brief Simple HTTP server that exposes Prometheus metrics via pull endpoints.
   ///
@@ -44,16 +43,16 @@ namespace prometheus {
   ///   http_server_t server;
   ///   auto app_registry  = std::make_shared<registry_t>();
   ///   auto sys_registry  = std::make_shared<registry_t>();
-  ///   server.add_endpoint("/metrics/app", app_registry);
-  ///   server.add_endpoint("/metrics/sys", sys_registry);
+  ///   server.add_endpoint(app_registry, "/metrics/app");
+  ///   server.add_endpoint(sys_registry, "/metrics/sys");
   ///   server.start({127,0,0,1}, 9100);
   ///   // app metrics  at http://localhost:9100/metrics/app
   ///   // sys metrics  at http://localhost:9100/metrics/sys
   /// @endcode
   class http_server_t {
 
-    using tcp_server_t = tcp_socket_t<v4, socket_type_e::server>;
-    using tcp_client_t = tcp_socket_t<v4, socket_type_e::client>;
+    using tcp_server_t = ipsockets::tcp_socket_t<ipsockets::v4, ipsockets::socket_type_e::server>;
+    using tcp_client_t = ipsockets::tcp_socket_t<ipsockets::v4, ipsockets::socket_type_e::client>;
     using endpoints_t  = std::unordered_map<std::string, std::shared_ptr<registry_t>>;
 
     endpoints_t        endpoints;        /// @brief Map from URL path to a shared registry.
@@ -62,8 +61,8 @@ namespace prometheus {
     std::thread        worker_thread;
     std::atomic<bool>  must_die       { false };
 
-    addr4_t            server_address { "0.0.0.0", 9100 };
-    tcp_server_t       server_socket  { log_e::debug };
+    ipsockets::addr4_t server_address { "0.0.0.0", 9100 };
+    tcp_server_t       server_socket  { log_e::error };
 
   public:
 
@@ -75,19 +74,23 @@ namespace prometheus {
     ///
     /// No endpoints are registered.  Use add_endpoint() to register paths,
     /// then call start() to begin serving.
-    http_server_t() = default;
+    http_server_t(log_e log_level = log_e::error) : server_socket(log_level) {}
 
     /// @brief No endpoints are registered, starts immediately.
     ///
     /// Use add_endpoint() to register paths.
     /// @param server_address_ Address and port to listen on.
-    http_server_t(addr4_t server_address_) : server_address(server_address_) {
+    /// @param log_level       Socket logging level (default: log_e::error).
+    http_server_t(ipsockets::addr4_t server_address_, log_e log_level = log_e::error)
+      : server_address(server_address_), server_socket(log_level) {
       start();
     }
 
     /// @brief Constructs with a shared registry.  Call start() to begin saving.
-    /// @param registry_ Registry to serialize.
-    explicit http_server_t(registry_t& registry_) {
+    /// @param registry_  Registry to serialize.
+    /// @param log_level  Socket logging level (default: log_e::error).
+    explicit http_server_t(registry_t& registry_, log_e log_level = log_e::error)
+      : server_socket(log_level) {
       add_endpoint(make_non_owning(registry_), "/metrics");
     }
 
@@ -95,28 +98,31 @@ namespace prometheus {
     /// @param server_address_ Address and port to listen on.
     /// @param registry_       Shared pointer to the registry to expose.
     /// @param path_           URL path to serve metrics at (default: "/metrics").
-    http_server_t(addr4_t server_address_, std::shared_ptr<registry_t> registry_, const std::string& path_ = "/metrics")
-      : server_address(server_address_) {
+    /// @param log_level       Socket logging level (default: log_e::error).
+    http_server_t(ipsockets::addr4_t server_address_, std::shared_ptr<registry_t> registry_, const std::string& path_ = "/metrics", log_e log_level = log_e::error)
+      : server_address(server_address_), server_socket(log_level) {
       add_endpoint(std::move(registry_), path_);
       start();
     }
 
     /// @brief Simple-mode constructor: single registry at a custom path, starts immediately.
-    /// @param server_address_ Address and port to listen on.
     /// @param registry_       Shared pointer to the registry to expose.
+    /// @param server_address_ Address and port to listen on.
     /// @param path_           URL path to serve metrics at (default: "/metrics").
-    http_server_t(std::shared_ptr<registry_t> registry_, addr4_t server_address_, const std::string& path_ = "/metrics")
-      : server_address(server_address_) {
+    /// @param log_level       Socket logging level (default: log_e::error).
+    http_server_t(std::shared_ptr<registry_t> registry_, ipsockets::addr4_t server_address_, const std::string& path_ = "/metrics", log_e log_level = log_e::error)
+      : server_address(server_address_), server_socket(log_level) {
       add_endpoint(std::move(registry_), path_);
       start();
     }
 
     /// @brief Simple-mode constructor: single registry at a custom path, starts immediately.
-    /// @param server_address_ Address and port to listen on.
     /// @param registry_       registry to expose.
+    /// @param server_address_ Address and port to listen on.
     /// @param path_           URL path to serve metrics at (default: "/metrics").
-    http_server_t(registry_t& registry_, addr4_t server_address_, const std::string& path_ = "/metrics")
-      : server_address(server_address_) {
+    /// @param log_level       Socket logging level (default: log_e::error).
+    http_server_t(registry_t& registry_, ipsockets::addr4_t server_address_, const std::string& path_ = "/metrics", log_e log_level = log_e::error)
+      : server_address(server_address_), server_socket(log_level) {
       add_endpoint(make_non_owning(registry_), path_);
       start();
     }
@@ -129,6 +135,20 @@ namespace prometheus {
     // Non-copyable, non-movable (owns a thread).
     http_server_t(const http_server_t&) = delete;
     http_server_t& operator=(const http_server_t&) = delete;
+
+    // =========================================================================
+    // Configuration
+    // =========================================================================
+
+    /// @brief Sets the socket logging level.
+    ///
+    /// Affects the server socket and all subsequently accepted client sockets.
+    /// Does not affect already accepted connections.
+    ///
+    /// @param level New logging level.
+    void set_log_level(log_e level) {
+      server_socket.log_level = level;
+    }
 
     // =========================================================================
     // Endpoint management
@@ -145,6 +165,19 @@ namespace prometheus {
     void add_endpoint(std::shared_ptr<registry_t> registry, const std::string& path) {
       std::lock_guard<std::mutex> lock(endpoints_mutex);
       endpoints[path] = std::move(registry);
+    }
+
+    /// @brief Registers a registry under the given URL path.
+    ///
+    /// If a registry is already registered at this path, it is replaced.
+    /// Can be called while the server is running — the endpoints map is
+    /// protected by a mutex.
+    ///
+    /// @param registry The registry to expose at this path.
+    /// @param path     URL path (e.g. "/metrics", "/metrics/app").
+    void add_endpoint(registry_t& registry, const std::string& path) {
+      std::lock_guard<std::mutex> lock(endpoints_mutex);
+      endpoints[path] = make_non_owning(registry);
     }
 
     /// @brief Removes the endpoint at the given URL path.
@@ -167,6 +200,16 @@ namespace prometheus {
       add_endpoint(std::move(registry), path_);
     }
 
+    /// @brief Replaces the registry at the default `/metrics` path.
+    ///
+    /// Convenience method for simple-mode usage.
+    ///
+    /// @param registry The registry.
+    /// @param path_    URL path (default: "/metrics").
+    void set_registry(registry_t& registry, const std::string& path_ = "/metrics") {
+      add_endpoint(make_non_owning(registry), path_);
+    }
+
     /// @brief Registers a collectable (registry) at the default `/metrics` path and starts the server.
     /// @param registry Shared pointer to the registry to expose.
     void RegisterCollectable(std::shared_ptr<registry_t> registry) {
@@ -179,25 +222,26 @@ namespace prometheus {
 
     /// @brief Sets the server listen address (does not restart automatically).
     /// @param server_address_ New address and port.
-    void set_server_address(addr4_t server_address_) {
+    void set_server_address(ipsockets::addr4_t server_address_) {
       server_address = server_address_;
     }
 
     /// @brief Sets the server address and starts listening.
     /// @param server_address_ Address and port to listen on.
-    void start(addr4_t server_address_) {
+    void start(ipsockets::addr4_t server_address_, log_e log_level = log_e::error) {
       set_server_address(server_address_);
+      set_log_level(log_level);
       start();
     }
 
     /// @brief Starts the HTTP server worker thread.
     void start() {
+      // Validate listen address.
+      if (server_address.port == 0)
+        throw std::runtime_error("http_server_t::start(): server port is 0 — call set_server_address() with a valid port before start()");
       // Stop the previous thread if it is still running
-      if (worker_thread.joinable()) {
-        must_die = true;
-        worker_thread.join();
-      }
-      must_die = false;
+      stop();
+      must_die      = false;
       worker_thread = std::thread{ &http_server_t::worker_function, this };
     }
 
@@ -219,22 +263,22 @@ namespace prometheus {
     void worker_function() {
 
       while (true) {
-        if (server_socket.open(server_address) == no_error) {
-          addr4_t accepted_client_addr;
+        if (server_socket.open(server_address) == ipsockets::no_error) {
+          ipsockets::addr4_t accepted_client_addr;
 
           // List of tasks for handling clients.
           std::list<std::future<void>> accepted_clients_futures;
 
           // Main loop for accepting new clients.
-          while (server_socket.state == state_e::state_opened) {
+          while (server_socket.state == ipsockets::state_e::opened) {
             tcp_client_t accepted_client = server_socket.accept(accepted_client_addr);
-            if (accepted_client.state == state_e::state_opened) {
+            if (accepted_client.state == ipsockets::state_e::opened) {
               accepted_clients_futures.emplace_back(
                 std::async(std::launch::async, &http_server_t::accepted_client_func, this, std::move(accepted_client)));
 
               // Prune completed tasks.
               for (std::list<std::future<void>>::iterator it = accepted_clients_futures.begin(); it != accepted_clients_futures.end();) {
-                if (it->wait_for(0s) == std::future_status::ready)
+                if (it->wait_for(std::chrono::seconds(0)) == std::future_status::ready)
                   it = accepted_clients_futures.erase(it);
                 else
                   ++it;
@@ -252,7 +296,7 @@ namespace prometheus {
 
         // Retry after a short delay, checking must_die frequently.
         for (int i = 0; i < 10 && !must_die; ++i)
-          std::this_thread::sleep_for(1s);
+          std::this_thread::sleep_for(std::chrono::seconds(1));
 
         if (must_die)
           return;
@@ -322,6 +366,8 @@ namespace prometheus {
 
       std::string path = extract_request_path(buffer.data(), res);
       if (path.empty()) {
+        if (server_socket.log_level <= log_e::error)
+            std::cout << "http_server_t: 400 Bad Request (could not parse request path)" << std::endl;
         send_404(accepted_client);
         return;
       }
@@ -329,16 +375,22 @@ namespace prometheus {
       // Check for a registered endpoint first.
       std::shared_ptr<registry_t> registry = find_registry(path);
       if (registry) {
+        if (server_socket.log_level <= log_e::info)
+          std::cout << "http_server_t: 200 GET " << path << std::endl;
         send_metrics(accepted_client, *registry);
         return;
       }
 
       // If the root path is requested and not registered, show an index page.
       if (path == "/") {
+        if (server_socket.log_level <= log_e::info)
+          std::cout << "http_server_t: 200 GET / (index page)" << std::endl;
         send_index(accepted_client);
         return;
       }
 
+      if (server_socket.log_level <= log_e::error)
+        std::cout << "http_server_t: 404 GET " << path << " (no endpoint registered)" << std::endl;
       send_404(accepted_client);
     }
 

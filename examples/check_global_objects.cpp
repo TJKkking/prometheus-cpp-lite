@@ -1,9 +1,25 @@
+/*
+* prometheus-cpp-lite — header-only C++ library for exposing Prometheus metrics
+* https://github.com/biaks/prometheus-cpp-lite
+*
+* Copyright (c) 2026 Yan Kryukov ianiskr@gmail.com
+* Licensed under the MIT License
+*
+* =============================================================================
+* check_global_objects.cpp — Global objects usage example
+*
+* Demonstrates using pre-defined global objects from prometheus-cpp-lite-full:
+* global_registry, file_saver, http_server, http_pusher.
+* All metric types are created with the global registry and exposed via
+* all three export modes simultaneously (HTTP pull, HTTP push, file).
+*
+*/
 
 #include <prometheus/prometheus.h>
 
 using namespace prometheus;
 
-int main() {
+int main () {
 
   counter_metric_t   requests  ("http_requests_total",      "Total requests");
   gauge_metric_t     active    ("active_connections",       "Open connections");
