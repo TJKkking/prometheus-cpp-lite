@@ -112,7 +112,9 @@ namespace prometheus {
   ///         owning summary, or a reference type (e.g. `double&`) for a
   ///         zero-copy reference handle.
   template <typename MetricValue = double>
-  class summary_t : public Metric {
+  class summary_t : public metric_base_for<MetricValue> {
+
+    using base_t = metric_base_for<MetricValue>;
 
   public:
     using value_type       = typename atomic_storage<MetricValue>::value_type;
@@ -204,7 +206,7 @@ namespace prometheus {
     explicit summary_t(const labels_t& labels,
                        const Quantiles& quantiles = DefaultQuantiles(),
                        size_t max_obs = 500000)
-      : Metric(labels), quantile_defs(quantiles), max_observations(max_obs) {
+      : base_t(labels), quantile_defs(quantiles), max_observations(max_obs) {
       for (const Quantile& q : quantile_defs) {
         if (q.quantile < 0.0 || q.quantile > 1.0)
           throw std::invalid_argument("Quantile must be in [0, 1], got: " + std::to_string(q.quantile));
@@ -222,14 +224,13 @@ namespace prometheus {
     ///        Must be reassigned via operator= before meaningful use.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     summary_t()
-      : Metric(), live_data(null_live_data()), max_observations(0) {}
+      : base_t(), live_data(null_live_data()), max_observations(0) {}
 
     /// @brief Constructs a reference summary that binds to an existing owning summary.
     /// @param other Owning summary whose live data and definitions are referenced.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     summary_t(summary_t<value_type>& other)
-      // summary_t<value_type>& -> summary_t<value_type&>
-      : Metric(other.labels_ptr)
+      : base_t(other.labels_ptr)
       , live_data(other.live_data)
       , quantile_defs(other.quantile_defs)
       , max_observations(other.max_observations) {}
@@ -326,7 +327,7 @@ namespace prometheus {
     /// @brief Reference summaries are copy-constructible (rebinds to the same live data).
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     summary_t(const summary_t& other)
-      : Metric(other.labels_ptr)
+      : base_t(other.labels_ptr)
       , live_data(other.live_data)
       , quantile_defs(other.quantile_defs)
       , max_observations(other.max_observations) {}
@@ -334,7 +335,7 @@ namespace prometheus {
     /// @brief Reference summaries are move-constructible.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     summary_t(summary_t&& other)
-      : Metric(other.labels_ptr)
+      : base_t(other.labels_ptr)
       , live_data(other.live_data)
       , quantile_defs(std::move(other.quantile_defs))
       , max_observations(other.max_observations) {}
@@ -385,13 +386,13 @@ namespace prometheus {
 
     /// @brief Returns the Prometheus type name for this metric.
     /// @return "summary".
-    const char* type_name() const override { return "summary"; }
+    const char* type_name() const { return "summary"; }
 
     /// @brief Freezes the current values into snapshots for consistent serialization.
     ///
     /// Takes a snapshot of the observation buffer, trims it to max_observations
     /// (sliding window), sorts it, and computes all configured quantiles.
-    void collect() override {
+    void collect() {
       std::vector<value_type> observations;
       value_type              sum;
       uint64_t                count;
@@ -427,7 +428,7 @@ namespace prometheus {
     /// @param out         Output stream.
     /// @param family_name Metric family name (line prefix).
     /// @param base_labels Constant labels from the owning family.
-    void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const override {
+    void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const {
       // Write one line per quantile with the "quantile" extra label.
       for (size_t i = 0; i < snapshot_quantiles.size(); ++i) {
         const QuantileSnapshot& q = snapshot_quantiles[i];

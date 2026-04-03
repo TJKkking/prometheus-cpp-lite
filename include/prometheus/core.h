@@ -330,6 +330,53 @@ namespace prometheus {
 
 
   // =============================================================================
+  // metric_ref_base — lightweight base class for reference-form metrics
+  // =============================================================================
+  //
+  // Reference-form metrics (counter_t<V&>, gauge_t<V&>) are thin handles that
+  // bind to an owning metric's std::atomic.  They are never stored in Family,
+  // never serialized, and never called polymorphically — so they don't need
+  // vtable, owned_labels, or snapshot_value.
+  //
+  // This base class provides only the labels_ptr needed for get_labels()
+  // (used at construction time to resolve labels in family).
+  //
+  // Layout: 8 bytes (one pointer), no vtable.
+
+  class metric_ref_base {
+  protected:
+    const labels_t* labels_ptr;
+
+    metric_ref_base ()
+      : labels_ptr (nullptr) {}
+
+    explicit metric_ref_base (const labels_t* ptr)
+      : labels_ptr (ptr) {}
+
+  public:
+    const labels_t& get_labels () const {
+      #ifndef NDEBUG
+      if (labels_ptr == nullptr)
+        throw std::runtime_error ("metric_ref_base::get_labels() called on unbound reference metric");
+      #endif
+      return *labels_ptr;
+    }
+  };
+
+
+  // =============================================================================
+  // metric_base_for<V> — selects Metric (owning) or metric_ref_base (reference)
+  // =============================================================================
+
+  template <typename MetricValue>
+  using metric_base_for = typename std::conditional<
+    std::is_reference<MetricValue>::value,
+    metric_ref_base,
+    Metric
+  >::type;
+
+
+  // =============================================================================
   // Family — container for a set of same-typed metrics sharing name and help
   // =============================================================================
 

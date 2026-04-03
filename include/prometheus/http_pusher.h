@@ -45,11 +45,10 @@ namespace prometheus {
 
     using tcp_client_t = ipsockets::tcp_socket_t<ipsockets::v4, ipsockets::socket_type_e::client>;
 
+    log_e                       socket_log_level { log_e::error };
     std::shared_ptr<registry_t> registry_ptr     { nullptr };
     std::thread                 worker_thread;
     std::atomic<bool>           must_die         { false };
-
-    log_e                       socket_log_level { log_e::error };
     std::chrono::seconds        period           { 10 };
     std::string                 server_host      { "localhost" };
     ipsockets::ip4_t            server_ip        { "127.0.0.1" };

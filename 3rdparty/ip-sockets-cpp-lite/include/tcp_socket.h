@@ -150,35 +150,53 @@ namespace ipsockets {
       socklen_t     addr_len  = sizeof (sockaddr_in_t);
       sockaddr_in_t addr_from = {};
 
-      #ifdef _WIN32 // WINDOWS OS
-        // for windows ::accept will never be timeout and we should close sock connection to interrupt it or we should using poll()
-        DWORD tv_ms  = 1000; // get SO_RCVTIMEO if set (DWORD on Windows), fallback to 1000 ms
-        int   optlen = sizeof(tv_ms);
-        if (getsockopt(this->sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv_ms, &optlen) == SOCKET_ERROR)
-          tv_ms = 1000;
+      // Use poll() to wait for incoming connections with a timeout.
+      // On Windows ::accept() does not respect SO_RCVTIMEO, and on some
+      // Linux versions SO_RCVTIMEO may not interrupt accept(). poll() solves
+      // both issues and allows graceful interruption via close() from another
+      // thread (poll returns POLLNVAL or an error on a closed fd).
+      {
+        int tv_ms = 1000;
+        #ifdef _WIN32 // WINDOWS OS
+          DWORD tv_dword = 1000;
+          int   optlen   = sizeof (tv_dword);
+          if (getsockopt (this->sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv_dword, &optlen) != SOCKET_ERROR)
+            tv_ms = (int)tv_dword;
 
-        WSAPOLLFD pfd;
-        pfd.fd     = this->sock;
-        pfd.events = POLLRDNORM; // wait incoming data
+          WSAPOLLFD pfd;
+          pfd.fd     = this->sock;
+          pfd.events = POLLRDNORM;
+          int rv = WSAPoll (&pfd, 1, tv_ms);
+        #else         // LINUX OS
+          timeval tv_val = {};
+          socklen_t tv_len = sizeof (tv_val);
+          if (getsockopt (this->sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv_val, &tv_len) != SOCKET_ERROR)
+            tv_ms = (int)(tv_val.tv_sec * 1000 + tv_val.tv_usec / 1000);
+          if (tv_ms <= 0) tv_ms = 1000;
 
-        int rv = WSAPoll(&pfd, 1, (int)tv_ms);
-        if (rv == 0) { // timeout
+          pollfd pfd;
+          pfd.fd     = this->sock;
+          pfd.events = POLLIN;
+          int rv = poll (&pfd, 1, tv_ms);
+        #endif
+
+        if (rv == 0) {
           result.sock = INVALID_SOCKET;
           cerr        = error_timeout;
         }
-        else if (pfd.revents & POLLRDNORM) { // data ready
+        else if (rv > 0 && (pfd.revents & (POLLIN
+          #ifdef _WIN32
+            | POLLRDNORM
+          #endif
+          ))) {
           result.sock = ::accept (this->sock, (sockaddr*)&addr_from, &addr_len);
           cerr        = this->_get_err ();
         }
-        else { // error
+        else {
           result.sock = INVALID_SOCKET;
           cerr        = this->_get_err ();
         }
-      #else         // LINUX OS
-        // for linux   ::accept will be timeout by value SO_RCVTIMEO wich we set by setsockopt (sock, SOL_SOCKET, SO_RCVTIMEO, (char*)&tv, sizeof (tv));
-        result.sock = ::accept (this->sock, (sockaddr*)&addr_from, &addr_len);
-        cerr = this->_get_err ();
-      #endif
+      }
 
       if (result.sock == INVALID_SOCKET) {
         this->log_and_return ('-', "accept", cerr);

@@ -39,7 +39,9 @@ namespace prometheus {
   ///         owning benchmark, or a reference type (e.g. `double&`) for a
   ///         zero-copy reference handle.
   template <typename MetricValue = double>
-  class benchmark_t : public Metric {
+  class benchmark_t : public metric_base_for<MetricValue> {
+
+    using base_t = metric_base_for<MetricValue>;
 
   public:
     using storage_type = typename atomic_storage<MetricValue>::storage_type;
@@ -74,7 +76,7 @@ namespace prometheus {
     /// @param labels Per-metric dimensional labels (copied and owned).
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
     explicit benchmark_t(const labels_t& labels)
-      : Metric(labels), elapsed_seconds(0) {}
+      : base_t(labels), elapsed_seconds(0) {}
 
     // --- SimpleAPI: easy to use from the user's side, non-trivial internally.
     // --- Reference constructors (benchmark_t<value_type&>) ----------------------
@@ -83,14 +85,13 @@ namespace prometheus {
     ///        Must be reassigned via operator= before meaningful use.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     benchmark_t()
-      : Metric(), elapsed_seconds(null_atomic<value_type>()) {}
+      : base_t(), elapsed_seconds(null_atomic<value_type>()) {}
 
     /// @brief Constructs a reference benchmark that binds to an existing owning benchmark.
     /// @param other Owning benchmark whose atomic elapsed_seconds and labels are referenced.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     benchmark_t(benchmark_t<value_type>& other)
-      // benchmark_t<value_type>& -> benchmark_t<value_type&>
-      : Metric(other.labels_ptr), elapsed_seconds(other.elapsed_seconds), snapshot_value(other.snapshot_value) {}
+      : base_t(other.labels_ptr), elapsed_seconds(other.elapsed_seconds), snapshot_value(other.snapshot_value) {}
 
     /// @brief Constructs a reference benchmark by adding an owning benchmark to the given family.
     /// The metric value type compatibility with the family is checked at runtime.
@@ -171,12 +172,12 @@ namespace prometheus {
     /// @brief Reference benchmarks are copy-constructible (rebinds to the same atomic).
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     benchmark_t(const benchmark_t& other)
-      : Metric(other.labels_ptr), elapsed_seconds(other.elapsed_seconds), snapshot_value(other.snapshot_value) {}
+      : base_t(other.labels_ptr), elapsed_seconds(other.elapsed_seconds), snapshot_value(other.snapshot_value) {}
 
     /// @brief Reference benchmarks are move-constructible.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     benchmark_t(benchmark_t&& other)
-      : Metric(other.labels_ptr), elapsed_seconds(other.elapsed_seconds), snapshot_value(other.snapshot_value) {}
+      : base_t(other.labels_ptr), elapsed_seconds(other.elapsed_seconds), snapshot_value(other.snapshot_value) {}
 
     /// @brief Reference benchmarks support copy-assignment by rebinding via placement new.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
@@ -255,10 +256,10 @@ namespace prometheus {
     /// Exposed as "counter" because elapsed time is monotonically increasing.
     ///
     /// @return "counter".
-    const char* type_name() const override { return "counter"; }
+    const char* type_name() const { return "counter"; }
 
     /// @brief Freezes the current value into a snapshot for consistent serialization.
-    void collect() override {
+    void collect() {
       snapshot_value = elapsed_seconds.load();
     }
 
@@ -266,7 +267,7 @@ namespace prometheus {
     /// @param out         Output stream.
     /// @param family_name Metric family name (line prefix).
     /// @param base_labels Constant labels from the owning family.
-    void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const override {
+    void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const {
       TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), snapshot_value);
     }
   };

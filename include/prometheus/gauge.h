@@ -31,7 +31,9 @@ namespace prometheus {
   ///         owning gauge, or a reference type (e.g. `int64_t&`) for a
   ///         zero-copy reference handle.
   template <typename MetricValue = int64_t>
-  class gauge_t : public Metric {
+  class gauge_t : public metric_base_for<MetricValue> {
+
+    using base_t = metric_base_for<MetricValue>;
 
   public:
     using storage_type = typename atomic_storage<MetricValue>::storage_type;
@@ -54,7 +56,7 @@ namespace prometheus {
     /// @param labels Per-metric dimensional labels (copied and owned).
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
     explicit gauge_t(const labels_t& labels)
-      : Metric(labels), val(0) {}
+      : base_t(labels), val(0) {}
 
     // --- SimpleAPI: easy to use from the user's side, non-trivial internally.
     // --- Reference constructors (gauge_t<value_type&>) --------------------------
@@ -63,14 +65,13 @@ namespace prometheus {
     ///        Must be reassigned via operator= before meaningful use.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     gauge_t()
-      : Metric(), val(null_atomic<value_type>()), snapshot_value(0) {}
+      : base_t(), val(null_atomic<value_type>()), snapshot_value(0) {}
 
     /// @brief Constructs a reference gauge that binds to an existing owning gauge.
     /// @param other Owning gauge whose atomic value and labels are referenced.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     gauge_t(gauge_t<value_type>& other)
-      // gauge_t<value_type>& -> gauge_t<value_type&>
-      : Metric(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
+      : base_t(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
 
     /// @brief Constructs a reference gauge by adding an owning gauge to the given family.
     /// The metric value type compatibility with the family is checked at runtime.
@@ -151,12 +152,12 @@ namespace prometheus {
     /// @brief Reference gauges are copy-constructible (rebinds to the same atomic).
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     gauge_t(const gauge_t& other)
-      : Metric(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
+      : base_t(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
 
     /// @brief Reference gauges are move-constructible.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     gauge_t(gauge_t&& other)
-      : Metric(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
+      : base_t(other.labels_ptr), val(other.val), snapshot_value(other.snapshot_value) {}
 
     /// @brief Reference gauges support copy-assignment by rebinding via placement new.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
@@ -243,16 +244,16 @@ namespace prometheus {
 
     /// @brief Returns the Prometheus type name for this metric.
     /// @return "gauge".
-    const char* type_name() const override { return "gauge"; }
+    const char* type_name() const { return "gauge"; }
 
     /// @brief Freezes the current value into a snapshot for consistent serialization.
-    void collect() override { snapshot_value = val.load(); }
+    void collect() { snapshot_value = val.load(); }
 
     /// @brief Writes this gauge's data line in the Prometheus text exposition format.
     /// @param out         Output stream.
     /// @param family_name Metric family name (line prefix).
     /// @param base_labels Constant labels from the owning family.
-    void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const override {
+    void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const {
       TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), snapshot_value);
     }
   };
