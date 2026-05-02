@@ -1,4 +1,3 @@
-
 cmake_minimum_required(VERSION 3.12)
 project(ip-sockets-cpp-lite)
 
@@ -46,8 +45,8 @@ file(GLOB IP_SOCKETS_CPP_LITE_HEADERS
 # it is header only target
 add_library               (${PROJECT_NAME}     INTERFACE)
 target_sources            (${PROJECT_NAME}     INTERFACE ${IP_SOCKETS_CPP_LITE_HEADERS})
-target_include_directories(${PROJECT_NAME}     INTERFACE $<BUILD_INTERFACE:  ${CMAKE_CURRENT_SOURCE_DIR}/include>
-                                                         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>  )
+target_include_directories(${PROJECT_NAME}     INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+                                                         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/ip-sockets-lite>  )
 
 # link pthreads on Linux (sockets use threads for examples and may be used in threaded apps)
 if(NOT WIN32)
@@ -62,7 +61,7 @@ endif()
 # =============================================================================
 
 install(TARGETS   ${PROJECT_NAME})
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ip-sockets-lite)
 
 # =============================================================================
 # Examples
