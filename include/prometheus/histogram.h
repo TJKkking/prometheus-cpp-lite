@@ -77,7 +77,9 @@ namespace prometheus {
   ///         owning histogram, or a reference type (e.g. `double&`) for a
   ///         zero-copy reference handle.
   template <typename MetricValue = double>
-  class histogram_t : public Metric {
+  class histogram_t : public metric_base_for<MetricValue> {
+
+    using base_t = metric_base_for<MetricValue>;
 
   public:
     using value_type       = typename atomic_storage<MetricValue>::value_type;
@@ -124,6 +126,12 @@ namespace prometheus {
     /// Grant access to internals so the reference form can bind to the owning form.
     friend histogram_t<value_type&>;
 
+    // for the reference form, we need to return references to empty storage for the default constructor
+    static std::vector<Bucket>& null_buckets() {
+      static std::vector<Bucket> instance;
+      return instance;
+    }
+
   public:
     using Value = value_type;
 
@@ -138,9 +146,8 @@ namespace prometheus {
     /// @param boundaries Sorted upper-bound values for the buckets.
     /// @throws std::invalid_argument if boundaries are not strictly increasing or contain NaN.
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
-    explicit histogram_t(const labels_t& labels,
-                         const BucketBoundaries& boundaries = DefaultBoundaries())
-      : Metric(labels), sample_count(0), sample_sum(0) {
+    explicit histogram_t(const labels_t& labels, const BucketBoundaries& boundaries = DefaultBoundaries())
+      : base_t(labels), sample_count(0), sample_sum(0) {
       // Validate that boundaries are strictly increasing.
       for (size_t i = 1; i < boundaries.size(); ++i)
         if (boundaries[i] <= boundaries[i - 1])
@@ -159,12 +166,17 @@ namespace prometheus {
     // --- SimpleAPI: easy to use from the user's side, non-trivial internally.
     // --- Reference constructors (histogram_t<value_type&>) ----------------------
 
+    /// @brief Default-constructs an unbound reference counter.
+    ///        Must be reassigned via operator= before meaningful use.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    histogram_t()
+      : base_t() , buckets(null_buckets()), sample_count(null_atomic<uint64_t>()), sample_sum(null_atomic<value_type>()) {}
+
     /// @brief Constructs a reference histogram that binds to an existing owning histogram.
     /// @param other Owning histogram whose buckets, count, and sum are referenced.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
     histogram_t(histogram_t<value_type>& other)
-      // histogram_t<value_type>& -> histogram_t<value_type&>
-      : Metric(other.labels_ptr)
+      : base_t(other.labels_ptr)
       , buckets(other.buckets)
       , sample_count(other.sample_count)
       , sample_sum(other.sample_sum) {}
@@ -196,10 +208,9 @@ namespace prometheus {
     /// @param labels     Constant base labels for the family.
     /// @param boundaries Sorted upper-bound values for the buckets.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    histogram_t(Registry& registry, const std::string& name, const std::string& help,
-                const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
+    histogram_t(Registry& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
       // registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
-      : histogram_t(registry.Add(name, help, labels).Add<histogram_t<value_type>>({}, boundaries)) {}
+      : histogram_t(registry.Add(name, help).Add<histogram_t<value_type>>(labels, boundaries)) {}
 
     /// @brief Constructs a reference histogram, creating both family and metric in the given registry.
     /// @param registry   Shared pointer to Registry to register the family in.
@@ -208,10 +219,9 @@ namespace prometheus {
     /// @param labels     Constant base labels for the family.
     /// @param boundaries Sorted upper-bound values for the buckets.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    histogram_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help,
-                const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
+    histogram_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {}, const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
       // registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
-      : histogram_t(registry->Add(name, help, labels).Add<histogram_t<value_type>>({}, boundaries)) {}
+      : histogram_t(registry->Add(name, help).Add<histogram_t<value_type>>(labels, boundaries)) {}
 
     /// @brief Constructs a reference histogram using the global registry.
     /// @param name       Metric family name.
@@ -219,10 +229,18 @@ namespace prometheus {
     /// @param labels     Constant base labels for the family.
     /// @param boundaries Sorted upper-bound values for the buckets.
     template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
-    histogram_t(const std::string& name, const std::string& help,
-                const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
+    histogram_t(const std::string& name, const std::string& help, const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
       // global_registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
-      : histogram_t(global_registry.Add(name, help, labels).Add<histogram_t<value_type>>({}, boundaries)) {}
+      : histogram_t(global_registry.Add(name, help).Add<histogram_t<value_type>>(labels, boundaries)) {}
+
+    /// @brief Constructs a reference histogram using the global registry.
+    /// @param name       Metric family name.
+    /// @param labels     Constant base labels for the family.
+    /// @param boundaries Sorted upper-bound values for the buckets.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    histogram_t(const std::string& name, const labels_t& labels = {}, const BucketBoundaries& boundaries = DefaultBoundaries())
+      // global_registry::Add() -> Family::Add<histogram_t<value_type>>() -> histogram_t<value_type>& -> histogram_t<value_type&>
+      : histogram_t(global_registry.Add(name).Add<histogram_t<value_type>>(labels, boundaries)) {}
 
     // --- Conversion: owning → reference -----------------------------------------
 
@@ -242,6 +260,44 @@ namespace prometheus {
     /// @brief Owning histograms are non-copy-assignable.
     template <typename U = MetricValue, std::enable_if_t<!std::is_reference<U>::value, int> = 0>
     histogram_t& operator=(const histogram_t&) = delete;
+
+    // --- Reference form: copy/move constructible ---------------------------------
+
+    /// @brief Reference histograms are copy-constructible (rebinds to the same storage).
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    histogram_t(const histogram_t& other)
+      : base_t(other.labels_ptr)
+      , buckets(other.buckets)
+      , sample_count(other.sample_count)
+      , sample_sum(other.sample_sum) {}
+
+    /// @brief Reference histograms are move-constructible.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    histogram_t(histogram_t&& other)
+      : base_t(other.labels_ptr)
+      , buckets(other.buckets)
+      , sample_count(other.sample_count)
+      , sample_sum(other.sample_sum) {}
+
+    /// @brief Reference histograms support copy-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    histogram_t& operator=(const histogram_t& other) {
+      if (this != &other) {
+        this->~histogram_t();
+        new (this) histogram_t(other);
+      }
+      return *this;
+    }
+
+    /// @brief Reference histograms support move-assignment by rebinding via placement new.
+    template <typename U = MetricValue, std::enable_if_t<std::is_reference<U>::value, int> = 0>
+    histogram_t& operator=(histogram_t&& other) {
+      if (this != &other) {
+        this->~histogram_t();
+        new (this) histogram_t(std::move(other));
+      }
+      return *this;
+    }
 
     // --- Public API (shared by both owning and reference forms) -----------------
 
@@ -281,13 +337,13 @@ namespace prometheus {
 
     /// @brief Returns the Prometheus type name for this metric.
     /// @return "histogram".
-    const char* type_name() const override { return "histogram"; }
+    const char* type_name() const { return "histogram"; }
 
     /// @brief Freezes the current values into snapshots for consistent serialization.
     ///
     /// Copies the current count, sum, and all bucket cumulative counts into
     /// local snapshot fields so that serialization reads a consistent set.
-    void collect() override {
+    void collect() {
       snapshot_count = sample_count.load();
       snapshot_sum   = sample_sum.load();
       snapshot_buckets.resize(buckets.size());
@@ -304,8 +360,7 @@ namespace prometheus {
     /// @param out         Output stream.
     /// @param family_name Metric family name (line prefix).
     /// @param base_labels Constant labels from the owning family.
-    void serialize(std::ostream& out, const std::string& family_name,
-                   const labels_t& base_labels) const override {
+    void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const {
       // Write one line per bucket with the "le" (less-or-equal) extra label.
       for (size_t i = 0; i < snapshot_buckets.size(); ++i) {
         const BucketSnapshot& b = snapshot_buckets[i];
@@ -318,15 +373,12 @@ namespace prometheus {
           TextSerializer::WriteValue(bound_oss, b.upper_bound);
         std::string bound_str = bound_oss.str();
 
-        TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(),
-                                  b.cumulative_count, "_bucket", "le", bound_str);
+        TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), b.cumulative_count, "_bucket", "le", bound_str);
       }
 
       // Write the total count and sum lines.
-      TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(),
-                                snapshot_count, "_count");
-      TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(),
-                                snapshot_sum, "_sum");
+      TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), snapshot_count, "_count");
+      TextSerializer::WriteLine(out, family_name, base_labels, this->get_labels(), snapshot_sum, "_sum");
     }
   };
 

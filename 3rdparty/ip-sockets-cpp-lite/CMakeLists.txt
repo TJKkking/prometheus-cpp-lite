@@ -1,4 +1,3 @@
-
 cmake_minimum_required(VERSION 3.12)
 project(ip-sockets-cpp-lite)
 
@@ -15,13 +14,15 @@ option(IP_SOCKETS_CPP_LITE_BUILD_EXAMPLES "Build with examples" OFF)
 # for initialise variables: CMAKE_INSTALL_INCLUDEDIR, CMAKE_INSTALL_LIBDIR, CMAKE_INSTALL_BINDIR	
 include(GNUInstallDirs)
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_SOURCE_DIR}/bin)
-
-if(WIN32)
-  foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
-    string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
-    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${PROJECT_SOURCE_DIR}/bin)
-  endforeach()
+# when this project is the root - set output to own bin/, otherwise inherit from parent
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+  set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
+  if(WIN32)
+    foreach(OUTPUTCONFIG ${CMAKE_CONFIGURATION_TYPES})
+      string(TOUPPER ${OUTPUTCONFIG} OUTPUTCONFIG)
+      set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_${OUTPUTCONFIG} ${CMAKE_SOURCE_DIR}/bin)
+    endforeach()
+  endif()
 endif()
 
 # =============================================================================
@@ -44,8 +45,14 @@ file(GLOB IP_SOCKETS_CPP_LITE_HEADERS
 # it is header only target
 add_library               (${PROJECT_NAME}     INTERFACE)
 target_sources            (${PROJECT_NAME}     INTERFACE ${IP_SOCKETS_CPP_LITE_HEADERS})
-target_include_directories(${PROJECT_NAME}     INTERFACE $<BUILD_INTERFACE:  ${CMAKE_CURRENT_SOURCE_DIR}/include>
-                                                         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>  )
+target_include_directories(${PROJECT_NAME}     INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+                                                         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/ip-sockets-lite>  )
+
+# link pthreads on Linux (sockets use threads for examples and may be used in threaded apps)
+if(NOT WIN32)
+  find_package(Threads)
+  target_link_libraries(${PROJECT_NAME} INTERFACE Threads::Threads)
+endif()
 # it was need to show header files of INTERFACE target in IDEs like Visual Studio 2015 with CMake < 3.0
 #add_custom_target        (${PROJECT_NAME}-ide SOURCES   ${IP_SOCKETS_CPP_LITE_HEADERS})
 
@@ -54,7 +61,7 @@ target_include_directories(${PROJECT_NAME}     INTERFACE $<BUILD_INTERFACE:  ${C
 # =============================================================================
 
 install(TARGETS   ${PROJECT_NAME})
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ip-sockets-lite)
 
 # =============================================================================
 # Examples

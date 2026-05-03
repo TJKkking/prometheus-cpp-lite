@@ -1,4 +1,3 @@
-
 /*
 * prometheus-cpp-lite — header-only C++ library for exposing Prometheus metrics
 * https://github.com/biaks/prometheus-cpp-lite
@@ -45,9 +44,9 @@ using namespace prometheus;
 //   python server_side_for_http_push.py
 // =============================================================================
 
-void example_periodic() {
-  std::cout << "\n=== Example 1: Periodic push — background thread every 5 seconds ===\n";
-  std::cout << "  Pushing to http://localhost:9091/metrics/job/periodic_example for 15 seconds...\n\n";
+void example_periodic () {
+  std::cout   << "\n=== Example 1: Periodic push — background thread every 5 seconds ===\n";
+  std::cout   << "  Pushing to http://localhost:9091/metrics/job/periodic_example for 15 seconds...\n\n";
 
   // 1. Create a shared registry.
   auto registry = std::make_shared<registry_t>();
@@ -57,22 +56,22 @@ void example_periodic() {
   gauge_metric_t   active   (registry, "active_connections",  "Currently open connections");
 
   // 3. Start the periodic pusher — metrics are now pushed every 5 seconds.
-  http_pusher_t pusher(registry, std::chrono::seconds(5), "http://localhost:9091/metrics/job/periodic_example");
+  http_pusher_t    pusher   (registry, std::chrono::seconds(5), "http://localhost:9091/metrics/job/periodic_example", log_e::info);
 
   // Simulate application work.
   for (int i = 0; i < 15; ++i) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
     requests += 1 + std::rand() % 10;
-    active.Set(5 + std::rand() % 20);
+    active    = 5 + std::rand() % 20;
 
     std::cout << "  [periodic] tick " << (i + 1) << "/15"
-      << "  requests=" << requests.Get()
-      << "  active="   << active.Get() << std::endl;
+              << "  requests=" << requests.Get()
+              << "  active="   << active.Get() << std::endl;
   }
 
   // Pusher stops automatically when it goes out of scope.
-  std::cout << "  Stopped.\n";
+  std::cout   << "  Stopped.\n";
 }
 
 // =============================================================================
@@ -90,13 +89,13 @@ void example_periodic() {
 //   python server_side_for_http_push.py
 // =============================================================================
 
-void example_on_demand() {
+void example_on_demand () {
   std::cout << "\n=== Example 2: On-demand push — Gateway-compatible API ===\n";
   std::cout << "  Pushing to http://localhost:9091 with job=batch_job, instance=host1\n\n";
 
   // 1. Create the pusher using the Gateway-compatible constructor.
   //    URI will be: /metrics/job/batch_job/instance/host1
-  http_pusher_t gateway ("localhost", "9091", "batch_job", {{"instance", "host1"}});
+  http_pusher_t gateway ("localhost", "9091", "batch_job", {{"instance", "host1"}}, log_e::info);
 
   // 2. Create a registry and register it.
   auto registry = std::make_shared<registry_t>();
@@ -112,12 +111,12 @@ void example_on_demand() {
     items_processed += 10 + std::rand() % 20;
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
-  last_batch_size.Set(42);
+  last_batch_size = 42;
 
   int status = gateway.Push();
   std::cout << "  Push() returned HTTP status: " << status
-    << "  items=" << items_processed.Get()
-    << "  batch_size=" << last_batch_size.Get() << "\n\n";
+            << "  items="      << items_processed.Get()
+            << "  batch_size=" << last_batch_size.Get() << "\n\n";
 
   // --- Step B: Process more items and PushAdd (PUT) — updates without replacing. ---
   std::cout << "  Step B: Processing more items and pushing via PUT (PushAdd)...\n";
@@ -125,12 +124,12 @@ void example_on_demand() {
     items_processed += 5 + std::rand() % 10;
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
-  last_batch_size.Set(99);
+  last_batch_size = 99;
 
   status = gateway.PushAdd();
   std::cout << "  PushAdd() returned HTTP status: " << status
-    << "  items=" << items_processed.Get()
-    << "  batch_size=" << last_batch_size.Get() << "\n\n";
+            << "  items=" << items_processed.Get()
+            << "  batch_size=" << last_batch_size.Get() << "\n\n";
 
   // --- Step C: Clean up — delete metrics from the Pushgateway. ---
   std::cout << "  Step C: Deleting metrics from the Pushgateway...\n";
@@ -147,11 +146,11 @@ void example_on_demand() {
 // for the network round-trip.
 // =============================================================================
 
-void example_async() {
+void example_async () {
   std::cout << "\n=== Example 3: Async push — non-blocking Gateway API ===\n";
   std::cout << "  Pushing to http://localhost:9091 with job=async_job\n\n";
 
-  http_pusher_t gateway("localhost", "9091", "async_job");
+  http_pusher_t gateway ("localhost", "9091", "async_job", {}, log_e::info);
 
   auto registry = std::make_shared<registry_t>();
   gateway.RegisterCollectable(registry);
@@ -184,7 +183,7 @@ void example_async() {
 // main
 // =============================================================================
 
-int main() {
+int main () {
   std::cout << "=== HTTP Push endpoint examples ===\n";
   std::cout << "Make sure server_side_for_http_push.py is running:\n";
   std::cout << "  python server_side_for_http_push.py\n";

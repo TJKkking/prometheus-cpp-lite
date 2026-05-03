@@ -7,25 +7,26 @@ using namespace ipsockets;
 
 #if true
 // server and client work on IPv4 mode
-static const ip_type_e cfg_ip_type = v4;
-static const addr4_t   cfg_server  = "127.0.0.1:2000";
-static const addr4_t   cfg_client  = "127.0.0.1:2000";
+static const ip_type_e ip_type = v4;
+static const addr4_t   ip_server  = "127.0.0.1:2000";
+static const addr4_t   ip_client  = "127.0.0.1:2000";
 #else
 // server and client work on IPv6 mode
-static const ip_type_e cfg_ip_type = v6;
-static const addr6_t   cfg_server  = "[::1]:2000";
-static const addr6_t   cfg_client  = "[::1]:2000";
+static const ip_type_e ip_type = v6;
+static const addr6_t   ip_server  = "[::1]:2000";
+static const addr6_t   ip_client  = "[::1]:2000";
 #endif
 
-using udp_server_t = udp_socket_t<cfg_ip_type, socket_type_e::server>;
-using udp_client_t = udp_socket_t<cfg_ip_type, socket_type_e::client>;
+using udp_server_t = udp_socket_t<ip_type, socket_type_e::server>;
+using udp_client_t = udp_socket_t<ip_type, socket_type_e::client>;
 
 // Simple server loop accepting connections.
 bool shutdown_server = false;
 void server_func () {
   udp_server_t sock (log_e::debug);
-  if (sock.open (cfg_server) == ipsockets::no_error) {
-    addr_t<cfg_ip_type> client_addr;
+  uint32_t timeout_ms    = 1000; // recv/send timeout in ms (SO_RCVTIMEO)
+  if (sock.open (ip_server, timeout_ms) == ipsockets::no_error) {
+    addr_t<ip_type> client_addr;
     char   buf[1000];
     while (shutdown_server == false) {
       int res = sock.recvfrom (buf, 1000, client_addr);
@@ -45,7 +46,8 @@ void server_func () {
 // Simple client sending periodic requests.
 void client_func () {
   udp_client_t sock (log_e::debug);
-  if (sock.open (cfg_client) == ipsockets::no_error) {
+  uint32_t timeout_ms    = 1000; // recv/send timeout in ms (SO_RCVTIMEO)
+  if (sock.open (ip_client, timeout_ms) == ipsockets::no_error) {
 
     for (size_t i = 0; i < 2; i++) {
       std::this_thread::sleep_for (std::chrono::seconds (1));

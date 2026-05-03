@@ -1,3 +1,4 @@
+
 #include "tcp_socket.h"
 
 #include <chrono>
@@ -18,11 +19,11 @@ using namespace ipsockets;
 using namespace std::chrono_literals;
 
 #if true
-static const ip_type_e cfg_ip_type = v4;
-static const addr4_t   cfg_server  = "127.0.0.1:8080";
+static const ip_type_e ip_type   = v4;
+static const addr4_t   ip_server = "127.0.0.1:8080";
 #else
-static const ip_type_e cfg_ip_type = v6;
-static const addr6_t   cfg_server  = "[::1]:8080";
+static const ip_type_e ip_type   = v6;
+static const addr6_t   ip_server = "[::1]:8080";
 #endif
 
 // ============================================================
@@ -45,8 +46,8 @@ struct mini_http_server_t {
   std::map<std::string, std::function<std::string()> > routes;
 
   std::chrono::steady_clock::time_point start_time;
-  uint64_t                        total_requests;
-  std::map<std::string, uint64_t> route_count;
+  uint64_t                              total_requests;
+  std::map<std::string, uint64_t>       route_count;
 
   // ===== constructor / destructor =====
 
@@ -86,10 +87,10 @@ struct mini_http_server_t {
       address_t                     client_addr;
 
       // Main accept loop
-      while (!must_die && server_socket.state == state_e::state_opened) {
+      while (!must_die && server_socket.state == state_e::opened) {
 
         tcp_client_t client = server_socket.accept(client_addr);
-        if (client.state != state_e::state_opened) continue;
+        if (client.state != state_e::opened) continue;
 
         // Handle client in separate thread
         tasks.push_back(std::async(std::launch::async,&mini_http_server_t::handle_client,this,std::move(client),client_addr));
@@ -168,27 +169,26 @@ struct mini_http_server_t {
     headers << "Content-Length: " << body.size() << "\r\n";
     headers << "Cache-Control: public, max-age=86400\r\n";
     headers << "Connection: close\r\n";
+    headers << "Server: mini-http-server\r\n";
     // Date header
-    std::time_t now = std::time(NULL);
-    char buf[128];
-    std::strftime(buf,sizeof(buf),"%a, %d %b %Y %H:%M:%S GMT",std::gmtime(&now));
-    headers << "Date: " << buf << "\r\n";
-    // Server header and empty line to separate headers from body
-    headers << "Server: mini-http-server\r\n\r\n";
+    std::time_t now = std::time (NULL);
+    headers << "Date: " << std::put_time (gmtime (&now), "%a, %d %b %Y %H:%M:%S %Z") << "\r\n";
+    // Empty line to separate headers from body
+    headers << "\r\n";
 
     // Send headers
     std::string h = headers.str();
-    client.send (h.c_str(),(int)h.size());
-    // Send body (if any)
+    client.send (h.data(), (int)h.size());
+    // Send body (if it not empty)
     if (!body.empty())
-      client.send (body.c_str(),(int)body.size());
+      client.send (body.data(), (int)body.size());
     std::cout << "Response: " << status << " " << status_text << " (" << body.size() << " bytes)" << std::endl;
   }
 
   // ===== uptime =====
 
   std::string uptime() const {
-    std::chrono::seconds s = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - start_time);
+    std::chrono::seconds s = std::chrono::duration_cast<std::chrono::seconds> (std::chrono::steady_clock::now() - start_time);
     uint64_t h = (uint64_t)s.count()/3600, m = ((uint64_t)s.count()%3600)/60, sec = (uint64_t)s.count()%60;
     std::ostringstream os;
     os << std::setw(2) << std::setfill('0') << h << ":" << std::setw(2) << m << ":" << std::setw(2) << sec;
@@ -349,11 +349,11 @@ struct mini_http_server_t {
 
 int main() {
 
-  mini_http_server_t<cfg_ip_type> server(cfg_server);
+  mini_http_server_t<ip_type> server(ip_server);
 
   std::cout << "\nMini HTTP Server is running!\n";
   std::cout << "Open your browser and visit:\n";
-  std::cout << "   http://" << cfg_server << "/\n";
+  std::cout << "   http://" << ip_server << "/\n";
   std::cout << "\nAvailable routes:\n";
   std::cout << "   /           - Home page\n";
   std::cout << "   /about      - About page\n";

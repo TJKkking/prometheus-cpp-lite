@@ -285,6 +285,11 @@ namespace prometheus {
     labels_t        owned_labels; ///< Internal storage for owning mode.
     const labels_t* labels_ptr;   ///< Pointer used for all label access (owning or reference).
 
+    /// @brief Default constructor for unbound reference metrics.
+    ///        labels_ptr is set to nullptr; any access in debug mode will assert.
+    Metric()
+      : owned_labels(), labels_ptr(nullptr) {}
+
   public:
 
     /// @brief Constructs an owning metric that copies the given labels.
@@ -301,7 +306,13 @@ namespace prometheus {
 
     /// @brief Returns the label set associated with this metric.
     /// @return Const reference to the labels (owned or external).
-    const labels_t& get_labels() const { return *labels_ptr; }
+    const labels_t& get_labels() const {
+      #ifndef NDEBUG
+      if (labels_ptr == nullptr)
+        throw std::runtime_error("Metric::get_labels() called on unbound (default-constructed) reference metric");
+      #endif
+      return *labels_ptr;
+    }
 
     /// @brief Returns the Prometheus type name string (e.g. "counter", "gauge").
     /// @return Null-terminated type name.
@@ -316,6 +327,53 @@ namespace prometheus {
     /// @param base_labels Constant labels from the owning family.
     virtual void serialize(std::ostream& out, const std::string& family_name, const labels_t& base_labels) const = 0;
   };
+
+
+  // =============================================================================
+  // metric_ref_base — lightweight base class for reference-form metrics
+  // =============================================================================
+  //
+  // Reference-form metrics (counter_t<V&>, gauge_t<V&>) are thin handles that
+  // bind to an owning metric's std::atomic.  They are never stored in Family,
+  // never serialized, and never called polymorphically — so they don't need
+  // vtable, owned_labels, or snapshot_value.
+  //
+  // This base class provides only the labels_ptr needed for get_labels()
+  // (used at construction time to resolve labels in family).
+  //
+  // Layout: 8 bytes (one pointer), no vtable.
+
+  class metric_ref_base {
+  protected:
+    const labels_t* labels_ptr;
+
+    metric_ref_base ()
+      : labels_ptr (nullptr) {}
+
+    explicit metric_ref_base (const labels_t* ptr)
+      : labels_ptr (ptr) {}
+
+  public:
+    const labels_t& get_labels () const {
+      #ifndef NDEBUG
+      if (labels_ptr == nullptr)
+        throw std::runtime_error ("metric_ref_base::get_labels() called on unbound reference metric");
+      #endif
+      return *labels_ptr;
+    }
+  };
+
+
+  // =============================================================================
+  // metric_base_for<V> — selects Metric (owning) or metric_ref_base (reference)
+  // =============================================================================
+
+  template <typename MetricValue>
+  using metric_base_for = typename std::conditional<
+    std::is_reference<MetricValue>::value,
+    metric_ref_base,
+    Metric
+  >::type;
 
 
   // =============================================================================
@@ -398,7 +456,7 @@ namespace prometheus {
     /// @param help_        Human-readable help/description string.
     /// @param base_labels_ Constant labels applied to every metric in this family.
     /// @throws std::invalid_argument if the metric name or any label name is invalid.
-    Family(const std::string& name_, const std::string& help_, const labels_t& base_labels_ = labels_t())
+    Family(const std::string& name_, const std::string& help_ = {}, const labels_t& base_labels_ = {})
       : name(name_), help(help_), base_labels(base_labels_) {
       if (!CheckMetricName(name_))
         throw std::invalid_argument("Invalid metric name: '" + name_ + "'");
@@ -408,7 +466,7 @@ namespace prometheus {
       }
     }
 
-    ~Family() = default;
+    virtual ~Family() = default;
 
     Family(const Family&) = delete;
     Family& operator=(const Family&) = delete;
@@ -492,7 +550,7 @@ namespace prometheus {
     /// the HELP / TYPE header lines followed by each metric's data lines.
     ///
     /// @param out Output stream to write to.
-    void serialize(std::ostream& out) {
+    virtual void serialize(std::ostream& out) {
       std::lock_guard<std::mutex> lock(mutex);
 
       if (metrics.empty()) return;
@@ -560,7 +618,7 @@ namespace prometheus {
     /// @param help     Help/description string.
     /// @param labels   Constant base labels.
     /// @return Reference to the registered CustomFamily.
-    static CustomFamily<MetricType>& Build(Registry& registry, const std::string& name, const std::string& help, const labels_t& labels = labels_t());
+    static CustomFamily<MetricType>& Build(Registry& registry, const std::string& name, const std::string& help = {} , const labels_t& labels = {});
   };
 
   // =============================================================================
@@ -580,6 +638,7 @@ namespace prometheus {
   public:
 
     Registry() = default;
+    virtual ~Registry() = default;
     Registry(Registry&& other) : families(std::move(other.families)) {};
 
     Registry& operator=(Registry&& other) {
@@ -597,7 +656,7 @@ namespace prometheus {
     /// @param base_labels Constant labels applied to every metric in this family.
     /// @return Reference to the (possibly new) Family.
     /// @throws std::runtime_error if the family already exists with different base labels.
-    Family& Add(const std::string& name, const std::string& help, const labels_t& base_labels = labels_t()) {
+    Family& Add(const std::string& name, const std::string& help = {}, const labels_t& base_labels = {}) {
       std::lock_guard<std::mutex> lock(mutex);
 
       typename Families::iterator it = families.find(name);
@@ -628,9 +687,9 @@ namespace prometheus {
     /// @param base_labels Constant labels.
     /// @return Reference to the CustomFamily.
     template <typename MetricType>
-    CustomFamily<MetricType>& Add(const std::string& name, const std::string& help, const labels_t& base_labels = labels_t()) {
+    CustomFamily<MetricType>& Add(const std::string& name, const std::string& help = {}, const labels_t& base_labels ={}) {
       Family& family = this->Add(name, help, base_labels);
-      return *reinterpret_cast<CustomFamily<MetricType>*>(&family);
+      return *static_cast<CustomFamily<MetricType>*>(&family);
     }
 
     /// @brief Removes the family with the given name from the registry.
@@ -652,7 +711,7 @@ namespace prometheus {
 
     /// @brief Serializes all registered families to the given output stream.
     /// @param out Output stream.
-    void serialize(std::ostream& out) {
+    virtual void serialize(std::ostream& out) {
       std::lock_guard<std::mutex> lock(mutex);
 
       // Switch to the classic locale for locale-independent number formatting.
@@ -751,6 +810,22 @@ namespace prometheus {
   extern registry_t global_registry;
 
   // =============================================================================
+  // null_atomic — static "null" atomic values for default-constructed
+  //               reference metrics (legacy deferred-init pattern support)
+  // =============================================================================
+
+  /// @brief Returns a static "null" atomic<T> that default-constructed reference
+  ///        metrics bind to. Uses Meyers singleton for header-only compatibility.
+  /// @warning Writing to a default-constructed metric increments this shared null
+  ///          atomic — effectively a no-op sink. The metric must be reassigned
+  ///          before meaningful use.
+  template <typename T>
+  inline std::atomic<T>& null_atomic() {
+    static std::atomic<T> instance { 0 };
+    return instance;
+  }
+
+  // =============================================================================
   // atomic_storage<V> — type trait for atomic storage selection
   // =============================================================================
 
@@ -819,7 +894,7 @@ namespace prometheus {
     /// @param name        Metric family name.
     /// @param help        Help/description string.
     /// @param base_labels Constant base labels.
-    family_t(registry_t& registry, const std::string& name, const std::string& help, const labels_t& base_labels = {})
+    family_t(registry_t& registry, const std::string& name, const std::string& help = {}, const labels_t& base_labels = {})
       : ref(registry.Add(name, help, base_labels)) {}
 
     /// @brief Constructs a family_t bound to the specified registry.
@@ -827,7 +902,7 @@ namespace prometheus {
     /// @param name        Metric family name.
     /// @param help        Help/description string.
     /// @param base_labels Constant base labels.
-    family_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help, const labels_t& base_labels = {})
+    family_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {}, const labels_t& base_labels = {})
       : ref(registry->Add(name, help, base_labels)) {}
 
     /// @brief Constructs a family_t bound to the global registry.
@@ -836,6 +911,12 @@ namespace prometheus {
     /// @param base_labels Constant base labels.
     family_t(const std::string& name, const std::string& help, const labels_t& base_labels = {})
       : ref(global_registry.Add(name, help, base_labels)) {}
+
+    /// @brief Constructs a family_t bound to the global registry.
+    /// @param name        Metric family name.
+    /// @param base_labels Constant base labels.
+    family_t(const std::string& name, const labels_t& base_labels = {})
+      : ref(global_registry.Add(name, {}, base_labels)) {}
 
     /// @brief Implicit conversion to the underlying Family reference.
     //operator Family&() { return ref; }
@@ -872,7 +953,7 @@ namespace prometheus {
     /// @param name        Metric family name.
     /// @param help        Help/description string.
     /// @param base_labels Constant base labels.
-    custom_family_t(registry_t& registry, const std::string& name, const std::string& help, const labels_t& base_labels = {})
+    custom_family_t(registry_t& registry, const std::string& name, const std::string& help = {}, const labels_t& base_labels = {})
       : family_t(registry, name, help, base_labels) {}
 
     /// @brief Constructs a typed family wrapper bound to the specified registry.
@@ -880,14 +961,14 @@ namespace prometheus {
     /// @param name        Metric family name.
     /// @param help        Help/description string.
     /// @param base_labels Constant base labels.
-    custom_family_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help, const labels_t& base_labels = {})
+    custom_family_t(std::shared_ptr<registry_t>& registry, const std::string& name, const std::string& help = {}, const labels_t& base_labels = {})
       : family_t(registry, name, help, base_labels) {}
 
     /// @brief Constructs a typed family wrapper bound to the global registry.
     /// @param name        Metric family name.
     /// @param help        Help/description string.
     /// @param base_labels Constant base labels.
-    custom_family_t(const std::string& name, const std::string& help, const labels_t& base_labels = {})
+    custom_family_t(const std::string& name, const std::string& help = {}, const labels_t& base_labels = {})
       : family_t(name, help, base_labels) {}
 
     /// @brief Implicit conversion to the underlying Family reference.
@@ -903,7 +984,7 @@ namespace prometheus {
     /// @return Reference to the metric instance.
     template <typename... Args>
     typename modify_t<MetricType>::metric_own& Add(const labels_t& metric_labels, Args&&... args) {
-      CustomFamily<typename modify_t<MetricType>::metric_own>& typed_ref = *reinterpret_cast<CustomFamily<typename modify_t<MetricType>::metric_own>*>(&ref);
+      CustomFamily<typename modify_t<MetricType>::metric_own>& typed_ref = *static_cast<CustomFamily<typename modify_t<MetricType>::metric_own>*>(&ref);
       return typed_ref.Add (metric_labels, std::forward<Args>(args)...);
     }
   };
